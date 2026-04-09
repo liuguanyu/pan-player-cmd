@@ -1,0 +1,29 @@
+app:
+  name: Pan Player TUI
+  version: 1.0.0
+  data_dir: ~/.pan-player
+
+api:
+  baidu_pan:
+    client_id: your_client_id_here
+    client_secret: your_client_secret_here
+    redirect_uri: oob
+    token_file: ~/.pan-player/token.json
+
+player:
+  volume: 70
+  play_mode: list
+  auto_play: false
+  show_lyrics: true
+  audio_device: default
+
+playlist:
+  max_history: 100
+  save_on_exit: true
+  remember_state: true
+
+ui:
+  theme: dark
+  language: zh-CN
+  show_help: true
+  color_lyrics: true

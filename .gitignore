@@ -1,0 +1,1342 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# Build output
+dist/
+bin/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config files with sensitive data
+config/local.yaml
+credentials.json
+token.json
+
+# 百度网盘 API 凭证文件（不提交到版本控制）
+# 注意：credentials.go 包含实际凭证，不应提交到 git
+# credentials.go.example 是示例文件，可以提交
+internal/config/credentials.go
+
+# 用户数据目录
+~/.pan-player/
+.pan-player/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+
+# Build artifacts
+pan-player
+pan-player-*
+pan-player.exe
+
+# Test files
+test_*
+*_test.go
+
+# Go mod files
+go.sum
+go.mod
+
+# Build directory
+build/
+
+# Coverage files
+coverage.out
+
+# VSCode settings
+.settings/
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Node.js
+node_modules/
+npm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+
+# Java
+*.class
+
+# C/C++
+*.o
+*.a
+*.lib
+
+# Unity
+Library/
+Temp/
+Obj/
+
+# Android
+*.apk
+*.aab
+
+# iOS
+*.ipa
+
+# Unity
+*.log
+*.pidb
+*.userprefs
+
+# Android Studio
+*.iml
+.gradle
+local.properties
+
+# Xcode
+*.xcworkspace
+xcuserdata
+
+# JetBrains IDEs
+*.iml
+.idea/
+
+# Visual Studio
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+
+# Linux
+*.bak
+
+# Cache
+.cache/
+
+# Temporary build files
+*.tmp
+*.temp
+
+# Binary files
+*.bin
+*.dat
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+*.lib
+
+# Project files
+project.json
+
+# Log files
+*.log
+log/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Build directories
+build/
+dist/
+bin/
+out/
+
+# Node.js
+node_modules/
+npm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+
+# Java
+*.class
+
+# C/C++
+*.o
+*.a
+*.lib
+
+# Unity
+Library/
+Temp/
+Obj/
+
+# Android
+*.apk
+*.aab
+
+# iOS
+*.ipa
+
+# Unity
+*.log
+*.pidb
+*.userprefs
+
+# Android Studio
+*.iml
+.gradle
+local.properties
+
+# Xcode
+*.xcworkspace
+xcuserdata
+
+# JetBrains IDEs
+*.iml
+.idea/
+
+# Visual Studio
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+
+# Linux
+*.bak
+
+# Cache
+.cache/
+
+# Temporary build files
+*.tmp
+*.temp
+
+# Binary files
+*.bin
+*.dat
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+*.lib
+
+# Project files
+project.json
+
+# Log files
+*.log
+log/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Build directories
+build/
+dist/
+bin/
+out/
+
+# Go mod files
+go.sum
+go.mod
+
+# Go build
+*.go
+
+# Project specific
+internal/config/credentials.go
+
+# User specific
+.gitignore.local
+
+# Other
+.DS_Store
+Thumbs.db
+
+# Binary files
+*.bin
+*.dat
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+*.lib
+
+# Project files
+project.json
+
+# Log files
+*.log
+log/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Build directories
+build/
+dist/
+bin/
+out/
+
+# Go mod files
+go.sum
+go.mod
+
+# Go build
+*.go
+
+# Project specific
+internal/config/credentials.go
+
+# User specific
+.gitignore.local
+
+# Other
+.DS_Store
+Thumbs.db
+
+# Binary files
+*.bin
+*.dat
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+*.lib
+
+# Project files
+project.json
+
+# Log files
+*.log
+log/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Build directories
+build/
+dist/
+bin/
+out/
+
+# Go mod files
+go.sum
+go.mod
+
+# Go build
+*.go
+
+# Project specific
+internal/config/credentials.go
+
+# User specific
+.gitignore.local
+
+# Other
+.DS_Store
+Thumbs.db
+
+# Binary files
+*.bin
+*.dat
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+*.lib
+
+# Project files
+project.json
+
+# Log files
+*.log
+log/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Build directories
+build/
+dist/
+bin/
+out/
+
+# Go mod files
+go.sum
+go.mod
+
+# Go build
+*.go
+
+# Project specific
+internal/config/credentials.go
+
+# User specific
+.gitignore.local
+
+# Other
+.DS_Store
+Thumbs.db
+
+# Binary files
+*.bin
+*.dat
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+*.lib
+
+# Project files
+project.json
+
+# Log files
+*.log
+log/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Build directories
+build/
+dist/
+bin/
+out/
+
+# Go mod files
+go.sum
+go.mod
+
+# Go build
+*.go
+
+# Project specific
+internal/config/credentials.go
+
+# User specific
+.gitignore.local
+
+# Other
+.DS_Store
+Thumbs.db
+
+# Binary files
+*.bin
+*.dat
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+*.lib
+
+# Project files
+project.json
+
+# Log files
+*.log
+log/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Build directories
+build/
+dist/
+bin/
+out/
+
+# Go mod files
+go.sum
+go.mod
+
+# Go build
+*.go
+
+# Project specific
+internal/config/credentials.go
+
+# User specific
+.gitignore.local
+
+# Other
+.DS_Store
+Thumbs.db
+
+# Binary files
+*.bin
+*.dat
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+*.lib
+
+# Project files
+project.json
+
+# Log files
+*.log
+log/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Build directories
+build/
+dist/
+bin/
+out/
+
+# Go mod files
+go.sum
+go.mod
+
+# Go build
+*.go
+
+# Project specific
+internal/config/credentials.go
+
+# User specific
+.gitignore.local
+
+# Other
+.DS_Store
+Thumbs.db
+
+# Binary files
+*.bin
+*.dat
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+*.lib
+
+# Project files
+project.json
+
+# Log files
+*.log
+log/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Build directories
+build/
+dist/
+bin/
+out/
+
+# Go mod files
+go.sum
+go.mod
+
+# Go build
+*.go
+
+# Project specific
+internal/config/credentials.go
+
+# User specific
+.gitignore.local
+
+# Other
+.DS_Store
+Thumbs.db
+
+# Binary files
+*.bin
+*.dat
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+*.lib
+
+# Project files
+project.json
+
+# Log files
+*.log
+log/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Build directories
+build/
+dist/
+bin/
+out/
+
+# Go mod files
+go.sum
+go.mod
+
+# Go build
+*.go
+
+# Project specific
+internal/config/credentials.go
+
+# User specific
+.gitignore.local
+
+# Other
+.DS_Store
+Thumbs.db
+
+# Binary files
+*.bin
+*.dat
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+*.lib
+
+# Project files
+project.json
+
+# Log files
+*.log
+log/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Build directories
+build/
+dist/
+bin/
+out/
+
+# Go mod files
+go.sum
+go.mod
+
+# Go build
+*.go
+
+# Project specific
+internal/config/credentials.go
+
+# User specific
+.gitignore.local
+
+# Other
+.DS_Store
+Thumbs.db
+
+# Binary files
+*.bin
+*.dat
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+*.lib
+
+# Project files
+project.json
+
+# Log files
+*.log
+log/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Build directories
+build/
+dist/
+bin/
+out/
+
+# Go mod files
+go.sum
+go.mod
+
+# Go build
+*.go
+
+# Project specific
+internal/config/credentials.go
+
+# User specific
+.gitignore.local
+
+# Other
+.DS_Store
+Thumbs.db
+
+# Binary files
+*.bin
+*.dat
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+*.lib
+
+# Project files
+project.json
+
+# Log files
+*.log
+log/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Build directories
+build/
+dist/
+bin/
+out/
+
+# Go mod files
+go.sum
+go.mod
+
+# Go build
+*.go
+
+# Project specific
+internal/config/credentials.go
+
+# User specific
+.gitignore.local
+
+# Other
+.DS_Store
+Thumbs.db
+
+# Binary files
+*.bin
+*.dat
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+*.lib
+
+# Project files
+project.json
+
+# Log files
+*.log
+log/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Build directories
+build/
+dist/
+bin/
+out/
+
+# Go mod files
+go.sum
+go.mod
+
+# Go build
+*.go
+
+# Project specific
+internal/config/credentials.go
+
+# User specific
+.gitignore.local
+
+# Other
+.DS_Store
+Thumbs.db
+
+# Binary files
+*.bin
+*.dat
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+*.lib
+
+# Project files
+project.json
+
+# Log files
+*.log
+log/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Build directories
+build/
+dist/
+bin/
+out/
+
+# Go mod files
+go.sum
+go.mod
+
+# Go build
+*.go
+
+# Project specific
+internal/config/credentials.go
+
+# User specific
+.gitignore.local
+
+# Other
+.DS_Store
+Thumbs.db
+
+# Binary files
+*.bin
+*.dat
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+*.lib
+
+# Project files
+project.json
+
+# Log files
+*.log
+log/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Build directories
+build/
+dist/
+bin/
+out/
+
+# Go mod files
+go.sum
+go.mod
+
+# Go build
+*.go
+
+# Project specific
+internal/config/credentials.go
+
+# User specific
+.gitignore.local
+
+# Other
+.DS_Store
+Thumbs.db
+
+# Binary files
+*.bin
+*.dat
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+*.lib
+
+# Project files
+project.json
+
+# Log files
+*.log
+log/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Build directories
+build/
+dist/
+bin/
+out/
+
+# Go mod files
+go.sum
+go.mod
+
+# Go build
+*.go
+
+# Project specific
+internal/config/credentials.go
+
+# User specific
+.gitignore.local
+
+# Other
+.DS_Store
+Thumbs.db
+
+# Binary files
+*.bin
+*.dat
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+*.lib
+
+# Project files
+project.json
+
+# Log files
+*.log
+log/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Build directories
+build/
+dist/
+bin/
+out/
+
+# Go mod files
+go.sum
+go.mod
+
+# Go build
+*.go
+
+# Project specific
+internal/config/credentials.go
+
+# User specific
+.gitignore.local
+
+# Other
+.DS_Store
+Thumbs.db
+
+# Binary files
+*.bin
+*.dat
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+*.lib
+
+# Project files
+project.json
+
+# Log files
+*.log
+log/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Build directories
+build/
+dist/
+bin/
+out/
+
+# Go mod files
+go.sum
+go.mod
+
+# Go build
+*.go
+
+# Project specific
+internal/config/credentials.go
+
+# User specific
+.gitignore.local
+
+# Other
+.DS_Store
+Thumbs.db
+
+# Binary files
+*.bin
+*.dat
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+*.lib
+
+# Project files
+project.json
+
+# Log files
+*.log
+log/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Build directories
+build/
+dist/
+bin/
+out/
+
+# Go mod files
+go.sum
+go.mod
+
+# Go build
+*.go
+
+# Project specific
+internal/config/credentials.go
+
+# User specific
+.gitignore.local
+
+# Other
+.DS_Store
+Thumbs.db
+
+# Binary files
+*.bin
+*.dat
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+*.lib
+
+# Project files
+project.json
+
+# Log files
+*.log
+log/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# Build directories
+build/
+dist/
+bin/
+out/
+
+# Go mod files
+go.sum
+go.mod
+
+# Go build
+*.go
+
+# Project specific
+internal/config/credentials.go
+
+# User specific
+.gitignore.local
+
+# Other
+.DS_Store
+Thumbs.db
+
+# Binary files
+*.bin
+*.dat
+*.exe
+*.dll
+*.so
+*.dylib
+*.o
+*.a
+*.lib
+
+# Project files
+project.json
+
+# Log files
+*.log
+log/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment
