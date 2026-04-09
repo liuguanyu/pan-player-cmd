@@ -297,7 +297,7 @@ go.sum
 go.mod
 
 # Go build
-*.go
+# *.go files are source code, should NOT be ignored
 
 # Project specific
 internal/config/credentials.go
@@ -350,7 +350,7 @@ go.sum
 go.mod
 
 # Go build
-*.go
+# *.go files are source code, should NOT be ignored
 
 # Project specific
 internal/config/credentials.go
@@ -403,7 +403,7 @@ go.sum
 go.mod
 
 # Go build
-*.go
+# *.go files are source code, should NOT be ignored
 
 # Project specific
 internal/config/credentials.go
@@ -456,7 +456,7 @@ go.sum
 go.mod
 
 # Go build
-*.go
+# *.go files are source code, should NOT be ignored
 
 # Project specific
 internal/config/credentials.go
@@ -509,7 +509,7 @@ go.sum
 go.mod
 
 # Go build
-*.go
+# *.go files are source code, should NOT be ignored
 
 # Project specific
 internal/config/credentials.go
@@ -562,7 +562,7 @@ go.sum
 go.mod
 
 # Go build
-*.go
+# *.go files are source code, should NOT be ignored
 
 # Project specific
 internal/config/credentials.go
@@ -615,7 +615,7 @@ go.sum
 go.mod
 
 # Go build
-*.go
+# *.go files are source code, should NOT be ignored
 
 # Project specific
 internal/config/credentials.go
@@ -668,7 +668,7 @@ go.sum
 go.mod
 
 # Go build
-*.go
+# *.go files are source code, should NOT be ignored
 
 # Project specific
 internal/config/credentials.go
@@ -721,7 +721,7 @@ go.sum
 go.mod
 
 # Go build
-*.go
+# *.go files are source code, should NOT be ignored
 
 # Project specific
 internal/config/credentials.go
@@ -774,7 +774,7 @@ go.sum
 go.mod
 
 # Go build
-*.go
+# *.go files are source code, should NOT be ignored
 
 # Project specific
 internal/config/credentials.go
@@ -827,7 +827,7 @@ go.sum
 go.mod
 
 # Go build
-*.go
+# *.go files are source code, should NOT be ignored
 
 # Project specific
 internal/config/credentials.go
@@ -880,7 +880,7 @@ go.sum
 go.mod
 
 # Go build
-*.go
+# *.go files are source code, should NOT be ignored
 
 # Project specific
 internal/config/credentials.go
@@ -933,7 +933,7 @@ go.sum
 go.mod
 
 # Go build
-*.go
+# *.go files are source code, should NOT be ignored
 
 # Project specific
 internal/config/credentials.go
@@ -986,7 +986,7 @@ go.sum
 go.mod
 
 # Go build
-*.go
+# *.go files are source code, should NOT be ignored
 
 # Project specific
 internal/config/credentials.go
@@ -1039,7 +1039,7 @@ go.sum
 go.mod
 
 # Go build
-*.go
+# *.go files are source code, should NOT be ignored
 
 # Project specific
 internal/config/credentials.go
@@ -1092,7 +1092,7 @@ go.sum
 go.mod
 
 # Go build
-*.go
+# *.go files are source code, should NOT be ignored
 
 # Project specific
 internal/config/credentials.go
@@ -1145,7 +1145,7 @@ go.sum
 go.mod
 
 # Go build
-*.go
+# *.go files are source code, should NOT be ignored
 
 # Project specific
 internal/config/credentials.go
@@ -1198,7 +1198,7 @@ go.sum
 go.mod
 
 # Go build
-*.go
+# *.go files are source code, should NOT be ignored
 
 # Project specific
 internal/config/credentials.go
@@ -1251,7 +1251,7 @@ go.sum
 go.mod
 
 # Go build
-*.go
+# *.go files are source code, should NOT be ignored
 
 # Project specific
 internal/config/credentials.go
@@ -1304,7 +1304,7 @@ go.sum
 go.mod
 
 # Go build
-*.go
+# *.go files are source code, should NOT be ignored
 
 # Project specific
 internal/config/credentials.go
