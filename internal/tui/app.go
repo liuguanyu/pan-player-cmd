@@ -3,10 +3,12 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbletea"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/liuguanyu/pan-player-cmd/internal/api"
 	"github.com/liuguanyu/pan-player-cmd/internal/config"
@@ -45,9 +47,9 @@ type App struct {
 	loginError    string
 
 	// 输入状态
-	inputBuffer    string
-	inputPrompt    string
-	inputCallback  func(string) tea.Cmd
+	inputBuffer   string
+	inputPrompt   string
+	inputCallback func(string) tea.Cmd
 
 	// 歌词状态
 	currentLyrics []models.LyricLine
@@ -374,7 +376,7 @@ func (a *App) renderLoginView() string {
 	if !a.isLoggedIn {
 		if a.loginError != "" {
 			errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000"))
-			b.WriteString(errorStyle.Render("错误: "+a.loginError))
+			b.WriteString(errorStyle.Render("错误: " + a.loginError))
 			b.WriteString("\r\n\r\n")
 		}
 
@@ -573,7 +575,7 @@ func (a *App) renderPlayerView() string {
 	// 播放控制提示
 	b.WriteString("\n")
 	controlStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#AAA"))
-	b.WriteString(controlStyle.Render("[空格]暂停/恢复  [n]下一曲  [p]上一曲  [↑/↓]音量  [m]模式  [l]歌词  [Esc]返回"))
+	b.WriteString(controlStyle.Render("[空格]暂停/恢复  [n]下一曲  [p]上一曲  [↑/↓]音量  [m]模式  [l]歌词  [Ctrl+Z]后台挂起  [Esc]返回"))
 
 	return b.String()
 }
@@ -1206,7 +1208,6 @@ func (a *App) renderFileBrowserView() string {
 	return b.String()
 }
 
-
 // handleKeyPress 处理按键
 // handleKeyPress 处理按键
 func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1237,6 +1238,26 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.pollingCancel()
 		}
 		return a, tea.Quit
+
+	case "ctrl+z":
+		// 挂起到后台（隐藏/收起 TUI，保持播放）
+		// 由于真实的系统 SIGTSTP 会冻结整个进程导致音频停止，
+		// 这里通过 ExecProcess 启动一个子 Shell 来"让出"终端，
+		// 这样用户可以继续使用终端，而由于父进程并未被系统挂起，音频会继续播放。
+		// 用户只需要在 Shell 中执行 exit 或 Ctrl+D 即可回到 TUI。
+		shell := os.Getenv("SHELL")
+		if shell == "" {
+			shell = "sh"
+		}
+
+		// 使用 sh 包装，先打印友好的挂起提示信息，再启动真实 Shell 交互
+		wrapperCmd := fmt.Sprintf(`echo "\033[32m▶ Pan Player 已隐藏到后台，音乐继续播放中...\033[0m" && echo "💡 提示：输入 \033[33mexit\033[0m 或按 \033[33mCtrl+D\033[0m 即可恢复播放器界面。\n" && exec %s`, shell)
+		cmd := exec.Command("sh", "-c", wrapperCmd)
+
+		return a, tea.ExecProcess(cmd, func(err error) tea.Msg {
+			// 恢复后强制重绘
+			return ForceRenderMsg{}
+		})
 
 	case "h":
 		if a.currentView != ViewHelp {
@@ -1305,7 +1326,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						if targetIndex >= 0 {
 							// 恢复播放状态
 							go func() {
-						a.player.SetCurrentIndex(targetIndex)
+								a.player.SetCurrentIndex(targetIndex)
 								a.player.LoadTrack(context.Background(), selectedPlaylist.Items[targetIndex])
 								// 恢复播放位置
 								if a.lastPlaybackState.CurrentTime > 0 {
@@ -1328,7 +1349,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						} else {
 							// 歌曲不在列表中，从头开始播放
 							go func() {
-						a.player.SetCurrentIndex(0)
+								a.player.SetCurrentIndex(0)
 								a.player.LoadTrack(context.Background(), selectedPlaylist.Items[0])
 								a.loadLyricsForTrack(selectedPlaylist.Items[0])
 							}()
@@ -1336,7 +1357,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					} else {
 						// 没有保存的状态，从头开始播放
 						go func() {
-						a.player.SetCurrentIndex(0)
+							a.player.SetCurrentIndex(0)
 							a.player.LoadTrack(context.Background(), selectedPlaylist.Items[0])
 							a.loadLyricsForTrack(selectedPlaylist.Items[0])
 						}()
@@ -1542,7 +1563,7 @@ type ForceRenderMsg struct{}
 // TickMsg 定时器消息
 type TickMsg struct{}
 
-//SplashAnimationDone 流光动画完成消息
+// SplashAnimationDone 流光动画完成消息
 type SplashAnimationDoneMsg struct{}
 
 // LoadingAnimationMsg 加载动画消息
@@ -1571,7 +1592,6 @@ type FileSelectionChangedMsg struct {
 type FolderFilesLoadedMsg struct {
 	Files []api.FileInfo
 }
-
 
 // Commands
 func (a *App) checkLogin() tea.Cmd {
