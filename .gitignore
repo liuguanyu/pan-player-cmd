@@ -14,6 +14,9 @@
 # Dependency directories
 vendor/
 
+# Third-party dependencies
+third_party/ffmpeg/
+
 # Go workspace file
 go.work
 
