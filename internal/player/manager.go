@@ -47,10 +47,17 @@ func (pm *PlaybackManager) updatePosition() {
 
 	position := pm.playerCore.GetCurrentPosition()
 
+	// 动态从 streamer 获取最新时长（对于 M4A 流式播放，时长是异步解析的）
+	duration := pm.playerCore.GetDynamicDuration()
+
 	pm.stateMutex.Lock()
 	defer pm.stateMutex.Unlock()
 
 	pm.state.CurrentTime = position
+	// 只有当动态时长有效时才更新（避免用估算值覆盖已知的真实值）
+	if duration > 0 {
+		pm.state.Duration = duration
+	}
 }
 
 func (pm *PlaybackManager) SetState(state *models.PlaybackState) {

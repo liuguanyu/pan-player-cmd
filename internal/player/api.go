@@ -15,18 +15,18 @@ import (
 
 // Player 是对外统一接口，组合所有模块
 type Player struct {
-	core          *PlayerCore
-	decoder       *AudioDecoder
-	manager       *PlaybackManager
-	apiClient     *api.BaiduPanClient
-	cacheDir      string
-	stopChan      chan struct{}
-	mu            sync.RWMutex
-	currentTrack  *models.PlaylistItem
+	core            *PlayerCore
+	decoder         *AudioDecoder
+	manager         *PlaybackManager
+	apiClient       *api.BaiduPanClient
+	cacheDir        string
+	stopChan        chan struct{}
+	mu              sync.RWMutex
+	currentTrack    *models.PlaylistItem
 	currentPlaylist *models.Playlist
-	currentIndex   int
-	loadingCancel  context.CancelFunc // 用于取消正在进行的加载
-	loadingMu      sync.Mutex         // 保护 loadingCancel
+	currentIndex    int
+	loadingCancel   context.CancelFunc // 用于取消正在进行的加载
+	loadingMu       sync.Mutex         // 保护 loadingCancel
 }
 
 // PlayerConfig 播放器配置
@@ -47,16 +47,16 @@ func NewPlayer(cfg *PlayerConfig, apiClient *api.BaiduPanClient) *Player {
 
 	p := &Player{
 		apiClient: apiClient,
-		cacheDir:   cfg.CacheDir,
-		stopChan:   make(chan struct{}),
+		cacheDir:  cfg.CacheDir,
+		stopChan:  make(chan struct{}),
 		core:      playerCore,
 		decoder:   &AudioDecoder{apiClient: apiClient, cacheDir: cfg.CacheDir},
-		manager:   &PlaybackManager{
+		manager: &PlaybackManager{
 			playerCore: playerCore,
 			state: &models.PlaybackState{
-				Volume:          0.6,           // 默认音量60%
-				PlaybackMode:    models.PlaybackModeOrder,  // 默认顺序播放
-				ShowLyrics:      true,          // 默认显示歌词
+				Volume:       0.6,                      // 默认音量60%
+				PlaybackMode: models.PlaybackModeOrder, // 默认顺序播放
+				ShowLyrics:   true,                     // 默认显示歌词
 			},
 			durationChan: make(chan float64, 10), // 初始化 durationChan
 		},
@@ -72,6 +72,12 @@ func NewPlayer(cfg *PlayerConfig, apiClient *api.BaiduPanClient) *Player {
 	} else {
 		logger.Info("Speaker初始化成功 (采样率: %d)", sr)
 	}
+
+	// 设置播放结束回调，实现自动切歌
+	p.core.SetOnTrackEnd(func() {
+		logger.Info("播放结束，根据播放模式自动切歌")
+		p.PlayNext()
+	})
 
 	// 启动播放状态和进度更新器（独立goroutine）
 	p.manager.Start()
@@ -142,7 +148,7 @@ func (p *Player) LoadTrack(ctx context.Context, track *models.PlaylistItem) erro
 		utils.GetLogger().Info("解码成功，开始设置流")
 		p.core.SetStream(res.streamer, res.format)
 		p.manager.SetPlayerCore(p.core)
-		p.manager.SetIsStream(true)  // M4A/WAV 是流式格式
+		p.manager.SetIsStream(true) // M4A/WAV 是流式格式
 
 		// 更新播放状态的时长
 		if res.format.SampleRate > 0 {

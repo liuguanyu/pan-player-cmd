@@ -11,11 +11,17 @@ import (
 
 // PlayerCore 是播放器的执行引擎，只负责播放控制，不处理数据加载
 type PlayerCore struct {
-	ctrl        *beep.Ctrl
-	volume      *effects.Volume
-	streamer    beep.StreamSeekCloser
-	format      beep.Format
-	isPlaying   bool
+	ctrl       *beep.Ctrl
+	volume     *effects.Volume
+	streamer   beep.StreamSeekCloser
+	format     beep.Format
+	isPlaying  bool
+	onTrackEnd func()
+}
+
+// SetOnTrackEnd 设置播放结束时的回调函数
+func (pc *PlayerCore) SetOnTrackEnd(callback func()) {
+	pc.onTrackEnd = callback
 }
 
 // Play 开始播放
@@ -112,11 +118,29 @@ func (pc *PlayerCore) SetStream(streamer beep.StreamSeekCloser, format beep.Form
 
 	pc.ctrl = &beep.Ctrl{
 		Streamer: pc.volume,
-		Paused:   true,  // 初始设置为暂停状态，Play() 会取消暂停
+		Paused:   true, // 初始设置为暂停状态，Play() 会取消暂停
 	}
 
-	// 关键：将音频流发送到 speaker！
-	speaker.Play(pc.ctrl)
+	// 捕获回调以避免闭包问题
+	onTrackEnd := pc.onTrackEnd
+
+	// 关键：将音频流发送到 speaker！使用 beep.Seq 来检测播放结束
+	if onTrackEnd != nil {
+		speaker.Play(beep.Seq(pc.ctrl, beep.Callback(func() {
+			utils.GetLogger().Info("音频流处理完毕，检查是否需要触发自动切歌...")
+			// 如果仍是 isPlaying 状态，说明是自然结束的，需要自动切歌
+			// (手动 Stop 或 Pause 会改变 isPlaying 状态)
+			if pc.isPlaying {
+				utils.GetLogger().Info("音频自然播放结束，触发 onTrackEnd 回调")
+				// 异步调用以避免在 speaker 的锁或回调中造成死锁
+				go onTrackEnd()
+			} else {
+				utils.GetLogger().Info("音频被手动停止或替换，跳过自动切歌")
+			}
+		})))
+	} else {
+		speaker.Play(pc.ctrl)
+	}
 
 	pc.isPlaying = false
 	utils.GetLogger().Info("SetStream 完成，音频流已发送到 speaker (采样率: %d)", format.SampleRate)
@@ -133,6 +157,20 @@ func (pc *PlayerCore) GetCurrentPosition() float64 {
 		return 0
 	}
 	return pc.format.SampleRate.D(pc.streamer.Position()).Seconds()
+}
+
+// GetDynamicDuration 动态获取音频时长（秒）
+// 对于 M4A 流式播放，时长是异步解析的，每次调用都会返回最新值
+func (pc *PlayerCore) GetDynamicDuration() float64 {
+	if pc.streamer == nil || pc.format.SampleRate == 0 {
+		return 0
+	}
+	// 通过 Len() 获取总采样点数，再转换为时长
+	totalSamples := pc.streamer.Len()
+	if totalSamples <= 0 {
+		return 0
+	}
+	return pc.format.SampleRate.D(totalSamples).Seconds()
 }
 
 // GetFormat 返回音频格式

@@ -121,13 +121,13 @@ func (d *M4ADecoder) decodeFromURL(url string, ffmpegPath string) (beep.StreamSe
 	// -map_metadata -1 : 不输出元数据（避免干扰 progress 解析）
 	// -progress pipe:2 : 将进度信息输出到 stderr（关键！用于解析时长）
 	cmd := exec.Command(ffmpegPath,
-		"-i", url,           // 从URL读取
-		"-f", "s16le",       // 原始 PCM 格式
-		"-ar", "44100",      // 采样率
-		"-ac", "2",          // 立体声
+		"-i", url, // 从URL读取
+		"-f", "s16le", // 原始 PCM 格式
+		"-ar", "44100", // 采样率
+		"-ac", "2", // 立体声
 		"-map_metadata", "-1", // 不输出元数据
 		"-progress", "pipe:2", // 将进度输出到 stderr（关键！）
-		"-",                 // 输出到 stdout
+		"-", // 输出到 stdout
 	)
 
 	// 获取 stdout pipe（用于读取转码后的 PCM 数据）
@@ -195,13 +195,13 @@ func (d *WAVStreamingDecoder) DecodeFromURL(url string) (beep.StreamSeekCloser, 
 	utils.GetLogger().Info("WAV流式解码：直接从URL读取: %s", url)
 
 	cmd := exec.Command(ffmpegPath,
-		"-i", url,           // 从URL读取
-		"-f", "s16le",       // 原始 PCM 格式
-		"-ar", "44100",      // 采样率
-		"-ac", "2",          // 立体声
+		"-i", url, // 从URL读取
+		"-f", "s16le", // 原始 PCM 格式
+		"-ar", "44100", // 采样率
+		"-ac", "2", // 立体声
 		"-map_metadata", "-1", // 不输出元数据
 		"-progress", "pipe:2", // 将进度输出到 stderr
-		"-",                 // 输出到 stdout
+		"-", // 输出到 stdout
 	)
 
 	// 获取 stdout pipe
@@ -281,21 +281,21 @@ func (s PCMStreamState) String() string {
 
 // pcmStreamReader PCM 流读取器（实现 beep.StreamSeekCloser）
 type pcmStreamReader struct {
-	reader      io.Reader
-	cmd         *exec.Cmd
-	input       io.ReadCloser
-	stdout      io.ReadCloser // 保存 stdout pipe 引用
-	stderr      io.ReadCloser // 保存 stderr pipe 引用
-	buffer      []byte
-	sampleRate  beep.SampleRate
-	pos         int
-	state       PCMStreamState
-	err         error
-	startTime   time.Time
-	pid         int
-	closeOnce   sync.Once
-	closeMutex  sync.Mutex
-	tempFile    string // 临时文件路径（用于M4A临时文件）
+	reader     io.Reader
+	cmd        *exec.Cmd
+	input      io.ReadCloser
+	stdout     io.ReadCloser // 保存 stdout pipe 引用
+	stderr     io.ReadCloser // 保存 stderr pipe 引用
+	buffer     []byte
+	sampleRate beep.SampleRate
+	pos        int
+	state      PCMStreamState
+	err        error
+	startTime  time.Time
+	pid        int
+	closeOnce  sync.Once
+	closeMutex sync.Mutex
+	tempFile   string // 临时文件路径（用于M4A临时文件）
 
 	// duration 相关字段
 	duration    time.Duration // 解析得到的音频总时长
@@ -472,12 +472,9 @@ func (s *pcmStreamReader) Len() int {
 		return totalSamples
 	}
 
-	// 如果还没有解析到时长，返回一个临时估算值
-	// 等待 FFmpeg 解析完成后，下次调用会返回正确值
-	// 估算值：假设音频时长为 5 分钟（300 秒）
-	estimatedSamples := int(300 * float64(s.sampleRate))
-	utils.GetLogger().Debug("Len() returning estimated samples: %d (duration not yet available)", estimatedSamples)
-	return estimatedSamples
+	// 如果还没有解析到时长，返回 0
+	// 这样上层可以知道真实时长还未就绪
+	return 0
 }
 
 func (s *pcmStreamReader) Position() int {
