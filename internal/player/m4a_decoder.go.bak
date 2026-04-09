@@ -1,0 +1,457 @@
+package player
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sync"
+	"time"
+
+	"github.com/faiface/beep"
+)
+
+// M4ADecoder M4A 解码器（使用 ffmpeg 流式转码）
+type M4ADecoder struct{}
+
+// Decode 解码 M4A 文件（流式处理）
+func (d *M4ADecoder) Decode(r io.ReadCloser) (beep.StreamSeekCloser, beep.Format, error) {
+	// 查找 ffmpeg 可执行文件
+	ffmpegPath, err := d.findFFmpeg()
+	if err != nil {
+		return nil, beep.Format{}, fmt.Errorf("ffmpeg not found: %w. M4A playback requires ffmpeg. Please run: ./scripts/get-ffmpeg.sh", err)
+	}
+
+	// 使用 ffmpeg 流式转码为 WAV 格式
+	return d.decodeWithFFmpeg(r, ffmpegPath)
+}
+
+// findFFmpeg 查找 ffmpeg 可执行文件
+func (d *M4ADecoder) findFFmpeg() (string, error) {
+	// 1. 首先检查程序目录下的 third_party/ffmpeg/ffmpeg
+	exePath, err := os.Executable()
+	if err == nil {
+		localFFmpeg := filepath.Join(filepath.Dir(exePath), "third_party", "ffmpeg", "ffmpeg")
+		if _, err := os.Stat(localFFmpeg); err == nil {
+			return localFFmpeg, nil
+		}
+	}
+
+	// 2. 检查当前工作目录下的 third_party/ffmpeg/ffmpeg
+	localFFmpeg := filepath.Join("third_party", "ffmpeg", "ffmpeg")
+	if _, err := os.Stat(localFFmpeg); err == nil {
+		return localFFmpeg, nil
+	}
+
+	// 3. 查找系统 PATH 中的 ffmpeg
+	if path, err := exec.LookPath("ffmpeg"); err == nil {
+		return path, nil
+	}
+
+	return "", fmt.Errorf("ffmpeg executable not found")
+}
+
+// decodeWithFFmpeg 使用 ffmpeg 流式解码
+func (d *M4ADecoder) decodeWithFFmpeg(r io.ReadCloser, ffmpegPath string) (beep.StreamSeekCloser, beep.Format, error) {
+	// ffmpeg 命令：从 stdin 读取，转码为原始 PCM，输出到 stdout
+	// -i - : 从 stdin 读取输入（流式）
+	// -f s16le : 输出原始 PCM 格式（16-bit signed little-endian）
+	// -ar 44100 : 输出采样率 44.1kHz
+	// -ac 2 : 立体声输出
+	// - : 输出到 stdout（流式）
+	cmd := exec.Command(ffmpegPath,
+		"-i", "-",           // 从 stdin 读取（流式输入）
+		"-f", "s16le",       // 原始 PCM 格式
+		"-ar", "44100",      // 采样率
+		"-ac", "2",          // 立体声
+		"-",                 // 输出到 stdout（流式输出）
+	)
+
+	// 设置 stdin（输入流）
+	cmd.Stdin = r
+
+	// 获取 stdout pipe（用于读取转码后的 PCM 数据）
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		r.Close()
+		return nil, beep.Format{}, fmt.Errorf("failed to create ffmpeg stdout pipe: %w", err)
+	}
+
+	// 启动 ffmpeg
+	startTime := time.Now()
+	if err := cmd.Start(); err != nil {
+		r.Close()
+		stdout.Close()
+		return nil, beep.Format{}, fmt.Errorf("failed to start ffmpeg: %w", err)
+	}
+
+	// 创建一个 PCM 流读取器
+	pcmReader := &pcmStreamReader{
+		reader:     stdout,
+		cmd:        cmd,
+		input:      r,
+		stdout:     stdout,
+		buffer:     make([]byte, 8192), // 缓冲区
+		sampleRate: beep.SampleRate(44100),
+		state:      StateRunning,
+		startTime:  startTime,
+		pid:        cmd.Process.Pid,
+	}
+
+	// 返回一个 StreamSeekCloser（注意：流式播放不支持 seek）
+	return pcmReader, beep.Format{
+		SampleRate:  beep.SampleRate(44100),
+		NumChannels: 2,
+		Precision:   2, // 16-bit = 2 bytes
+	}, nil
+}
+
+// ProcessState 进程状态
+type ProcessState int
+
+const (
+	StateIdle ProcessState = iota
+	StateRunning
+	StateCompleted
+	StateError
+)
+
+func (s ProcessState) String() string {
+	switch s {
+	case StateIdle:
+		return "idle"
+	case StateRunning:
+		return "running"
+	case StateCompleted:
+		return "completed"
+	case StateError:
+		return "error"
+	default:
+		return "unknown"
+	}
+}
+
+// pcmStreamReader PCM 流读取器（实现 beep.StreamSeekCloser）
+type pcmStreamReader struct {
+	reader      io.Reader
+	cmd         *exec.Cmd
+	input       io.ReadCloser
+	stdout      io.ReadCloser // 保存 stdout pipe 引用
+	buffer      []byte
+	sampleRate  beep.SampleRate
+	pos         int
+	state       ProcessState
+	err         error
+	startTime   time.Time
+	pid         int
+	closeOnce   sync.Once
+	closeMutex  sync.Mutex
+}
+
+func (s *pcmStreamReader) Stream(samples [][2]float64) (n int, ok bool) {
+	s.closeMutex.Lock()
+	if s.state != StateRunning || s.err != nil {
+		s.closeMutex.Unlock()
+		return 0, false
+	}
+	s.closeMutex.Unlock()
+
+	// 读取 PCM 数据
+	// 每个采样点：2 channels * 2 bytes = 4 bytes
+	// 需要读取：len(samples) * 4 bytes
+	bytesNeeded := len(samples) * 4
+	if len(s.buffer) < bytesNeeded {
+		s.buffer = make([]byte, bytesNeeded)
+	}
+
+	totalRead := 0
+	for totalRead < bytesNeeded {
+		nBytes, err := s.reader.Read(s.buffer[totalRead:bytesNeeded])
+		totalRead += nBytes
+		if err != nil {
+			if err == io.EOF {
+				s.closeMutex.Lock()
+				s.state = StateCompleted
+				s.closeMutex.Unlock()
+			} else {
+				s.closeMutex.Lock()
+				s.state = StateError
+				s.err = fmt.Errorf("stream read error: %w", err)
+				s.closeMutex.Unlock()
+			}
+			break
+		}
+	}
+
+	// 转换 PCM 数据为 beep 格式
+	numSamples := totalRead / 4
+	for i := 0; i < numSamples && i < len(samples); i++ {
+		// 读取左声道（16-bit signed little-endian）
+		left := int16(s.buffer[i*4]) | int16(s.buffer[i*4+1])<<8
+		// 读取右声道
+		right := int16(s.buffer[i*4+2]) | int16(s.buffer[i*4+3])<<8
+
+		// 转换为 -1.0 到 1.0 的浮点值
+		samples[i][0] = float64(left) / 32768.0
+		samples[i][1] = float64(right) / 32768.0
+	}
+
+	s.pos += numSamples
+	return numSamples, numSamples > 0
+}
+
+func (s *pcmStreamReader) Err() error {
+	return s.err
+}
+
+func (s *pcmStreamReader) Len() int {
+	// 流式播放无法获取总长度，返回一个大值
+	return 1 << 30
+}
+
+func (s *pcmStreamReader) Position() int {
+	return s.pos
+}
+
+func (s *pcmStreamReader) Seek(pos int) error {
+	// 流式播放不支持 seek
+	return fmt.Errorf("streaming playback does not support seeking")
+}
+
+func (s *pcmStreamReader) Close() error {
+	var closeErr error
+
+	s.closeOnce.Do(func() {
+		s.closeMutex.Lock()
+		s.state = StateIdle
+		s.closeMutex.Unlock()
+
+		// 关闭输入流
+		if s.input != nil {
+			if err := s.input.Close(); err != nil {
+				closeErr = fmt.Errorf("failed to close input stream: %w", err)
+			}
+			s.input = nil
+		}
+
+		// 关闭 stdout pipe
+		if s.stdout != nil {
+			if err := s.stdout.Close(); err != nil {
+				if closeErr == nil {
+					closeErr = fmt.Errorf("failed to close stdout pipe: %w", err)
+				}
+			}
+			s.stdout = nil
+		}
+
+		// 终止 ffmpeg 进程
+		if s.cmd != nil && s.cmd.Process != nil {
+			// 发送 SIGKILL 信号强制终止
+			if err := s.cmd.Process.Kill(); err != nil {
+				if closeErr == nil {
+					closeErr = fmt.Errorf("failed to kill ffmpeg process (pid=%d): %w", s.pid, err)
+				}
+			}
+
+			// 等待进程真正结束
+			if err := s.cmd.Wait(); err != nil {
+				// 进程已经被 kill，Wait 返回的错误是预期的，不记录为错误
+				// 只记录非预期的等待错误
+				if closeErr == nil && s.state != StateIdle {
+					closeErr = fmt.Errorf("ffmpeg process wait error (pid=%d): %w", s.pid, err)
+				}
+			}
+		}
+
+		// 清空缓冲区
+		s.buffer = nil
+		s.reader = nil
+		s.cmd = nil
+	})
+
+	return closeErr
+}
+
+// String 返回当前状态的字符串表示（用于调试）
+func (s *pcmStreamReader) String() string {
+	s.closeMutex.Lock()
+	defer s.closeMutex.Unlock()
+
+	duration := time.Since(s.startTime)
+	return fmt.Sprintf("pcmStreamReader{state=%s, pid=%d, pos=%d, duration=%v, err=%v}",
+		s.state, s.pid, s.pos, duration, s.err)
+}
+
+// ffmpegReader 包装 ffmpeg 的输出流，实现流式读取
+type ffmpegReader struct {
+	stdout    io.Reader
+	stderr    io.Reader
+	cmd       *exec.Cmd
+	input     io.ReadCloser
+	stdoutP   io.ReadCloser // 保存 stdout pipe 引用
+	state     ProcessState
+	pid       int
+	closeOnce sync.Once
+	closeMu   sync.Mutex
+}
+
+func (r *ffmpegReader) Read(p []byte) (n int, err error) {
+	return r.stdout.Read(p)
+}
+
+func (r *ffmpegReader) Close() error {
+	var closeErr error
+
+	r.closeOnce.Do(func() {
+		r.closeMu.Lock()
+		r.state = StateIdle
+		r.closeMu.Unlock()
+
+		// 关闭输入流
+		if r.input != nil {
+			if err := r.input.Close(); err != nil {
+				closeErr = fmt.Errorf("failed to close input stream: %w", err)
+			}
+			r.input = nil
+		}
+
+		// 关闭 stdout pipe
+		if r.stdoutP != nil {
+			if err := r.stdoutP.Close(); err != nil {
+				if closeErr == nil {
+					closeErr = fmt.Errorf("failed to close stdout pipe: %w", err)
+				}
+			}
+			r.stdoutP = nil
+		}
+
+		// 终止 ffmpeg 进程
+		if r.cmd != nil && r.cmd.Process != nil {
+			// 发送 SIGKILL 信号强制终止
+			if err := r.cmd.Process.Kill(); err != nil {
+				if closeErr == nil {
+					closeErr = fmt.Errorf("failed to kill ffmpeg process (pid=%d): %w", r.pid, err)
+				}
+			}
+
+			// 等待进程真正结束
+			if err := r.cmd.Wait(); err != nil {
+				// 进程已经被 kill，Wait 返回的错误是预期的
+				if closeErr == nil && r.state != StateIdle {
+					closeErr = fmt.Errorf("ffmpeg process wait error (pid=%d): %w", r.pid, err)
+				}
+			}
+		}
+
+		// 清空引用
+		r.stdout = nil
+		r.stderr = nil
+		r.cmd = nil
+	})
+
+	return closeErr
+}
+
+func (d *M4ADecoder) Format() AudioFormat {
+	return FormatM4A
+}
+
+// AACDecoder 独立的 AAC 解码器（使用 ffmpeg）
+type AACDecoder struct{}
+
+func (d *AACDecoder) Decode(r io.ReadCloser) (beep.StreamSeekCloser, beep.Format, error) {
+	// AAC 文件也使用 ffmpeg 解码（同样的流式处理）
+	m4aDecoder := &M4ADecoder{}
+	return m4aDecoder.Decode(r)
+}
+
+func (d *AACDecoder) Format() AudioFormat {
+	return FormatAAC
+}
+
+// parseADTSHeader 解析 ADTS 头（用于独立 AAC 文件）
+func parseADTSHeader(data []byte) (sampleRate int, channels int, err error) {
+	if len(data) < 7 {
+		return 0, 0, fmt.Errorf("data too short for ADTS header")
+	}
+
+	// ADTS 头同步字：0xFFF
+	if data[0] != 0xFF || (data[1]&0xF0) != 0xF0 {
+		return 0, 0, fmt.Errorf("invalid ADTS sync word")
+	}
+
+	// 解析采样率索引
+	sampleRateIndex := (data[2] >> 2) & 0x0F
+	sampleRates := []int{
+		96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050,
+		16000, 12000, 11025, 8000, 7350,
+	}
+
+	if int(sampleRateIndex) < len(sampleRates) {
+		sampleRate = sampleRates[sampleRateIndex]
+	}
+
+	// 解析声道数
+	channelConfig := ((data[2] & 0x01) << 2) | ((data[3] >> 6) & 0x03)
+	channels = int(channelConfig)
+
+	return sampleRate, channels, nil
+}
+
+// createPCMStreamer 创建 PCM 流播放器（用于已解码的音频数据）
+func createPCMStreamer(samples [][2]float64, sampleRate beep.SampleRate) beep.StreamSeekCloser {
+	return &pcmStreamer{
+		samples:    samples,
+		sampleRate: sampleRate,
+		pos:        0,
+		len:        len(samples),
+	}
+}
+
+type pcmStreamer struct {
+	samples    [][2]float64
+	sampleRate beep.SampleRate
+	pos        int
+	len        int
+}
+
+func (s *pcmStreamer) Stream(samples [][2]float64) (n int, ok bool) {
+	if s.pos >= s.len {
+		return 0, false
+	}
+
+	for i := range samples {
+		if s.pos >= s.len {
+			return i, false
+		}
+		samples[i] = s.samples[s.pos]
+		s.pos++
+	}
+
+	return len(samples), true
+}
+
+func (s *pcmStreamer) Err() error {
+	return nil
+}
+
+func (s *pcmStreamer) Len() int {
+	return s.len
+}
+
+func (s *pcmStreamer) Position() int {
+	return s.pos
+}
+
+func (s *pcmStreamer) Seek(pos int) error {
+	if pos < 0 || pos > s.len {
+		return fmt.Errorf("position %d out of range [0, %d]", pos, s.len)
+	}
+	s.pos = pos
+	return nil
+}
+
+func (s *pcmStreamer) Close() error {
+	return nil
+}
