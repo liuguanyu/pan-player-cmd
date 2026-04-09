@@ -74,6 +74,9 @@ type App struct {
 	splashIndex     int
 	splashAnimating bool
 
+	// 播放器界面流光动画帧
+	shimmerFrame int
+
 	// 播放状态持久化
 	lastPlaybackState *models.PlaybackState
 }
@@ -174,6 +177,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.currentView == ViewPlayer {
 			// 强制重新渲染以更新播放进度
 			a.version++
+			a.shimmerFrame++
 
 			// 检查歌曲是否切换
 			state := a.player.GetState()
@@ -232,6 +236,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.currentView == ViewPlayer {
 			// 强制重新渲染以更新播放进度
 			a.version++
+			a.shimmerFrame++
 
 			// 检查歌曲是否切换
 			state := a.player.GetState()
@@ -553,10 +558,8 @@ func (a *App) renderPlayerView() string {
 		}
 
 		// 当前歌曲信息
-		songStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#00BFFF")).
-			Bold(true)
-		b.WriteString(songStyle.Render(fmt.Sprintf("正在播放: %s", state.CurrentSong.ServerFileName)))
+		songText := fmt.Sprintf("正在播放: %s", state.CurrentSong.ServerFileName)
+		b.WriteString(renderShimmerText(songText, a.shimmerFrame, false))
 		b.WriteString("\n")
 	}
 
@@ -693,9 +696,6 @@ func (a *App) renderLyrics(currentTime float64) string {
 	}
 
 	lyricsStyle := lipgloss.NewStyle().Padding(0, 2)
-	currentStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#7D56F4")).
-		Bold(true)
 
 	for i := startIndex; i < endIndex; i++ {
 		// 安全检查索引
@@ -709,7 +709,7 @@ func (a *App) renderLyrics(currentTime float64) string {
 		}
 
 		if i == currentIndex {
-			b.WriteString(currentStyle.Render("→ " + text))
+			b.WriteString(renderShimmerText("→ "+text, a.shimmerFrame, false))
 		} else {
 			b.WriteString(lyricsStyle.Render("  " + text))
 		}
@@ -717,6 +717,61 @@ func (a *App) renderLyrics(currentTime float64) string {
 	}
 
 	return b.String()
+}
+
+// renderShimmerText 生成带流光效果的文本
+// frame: 当前动画帧，用于推进颜色渐变波峰
+// spinnerPrefix: 是否在文本前加前导动态旋转字符
+func renderShimmerText(text string, frame int, spinnerPrefix bool) string {
+	// 前导旋转字符（仿 Claude CLI 效果）
+	// 使用十字星或者常见加载字符
+	spinnerChars := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+	// 基础颜色（蓝色系）
+	baseColor := "#1E6FD9"
+	// 流光波峰（从暗到亮再到暗）
+	shimmerWave := []string{
+		"#1E6FD9", "#2A86F0", "#45A3FF", "#66B8FF",
+		"#8CCBFF", // 波峰中心（最亮）
+		"#66B8FF", "#45A3FF", "#2A86F0", "#1E6FD9",
+	}
+
+	runes := []rune(text)
+	n := len(runes)
+	if n == 0 {
+		return ""
+	}
+
+	// 设定整个循环的周期长度，例如 40 个字符跨度或者文本长度加上波长
+	// 这样光束划过文本后会有一段暗色的间隔再出现下一次光束
+	cycleLen := n + len(shimmerWave)
+	if cycleLen < 30 {
+		cycleLen = 30 // 保证一个合理的最小循环周期
+	}
+
+	var styledText strings.Builder
+	for i, ch := range runes {
+		// 计算当前字符在光束循环中的位置
+		// 随着 frame 增加，波浪向右移动
+		pos := ((i-frame)%cycleLen + cycleLen) % cycleLen
+
+		color := baseColor
+		// 如果落在了波峰的范围内
+		if pos < len(shimmerWave) {
+			color = shimmerWave[pos]
+		}
+
+		charStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(color))
+		styledText.WriteString(charStyle.Render(string(ch)))
+	}
+
+	if spinnerPrefix {
+		// 让 spinner 慢一点，frame / 2
+		spinnerIdx := ((frame/2)%len(spinnerChars) + len(spinnerChars)) % len(spinnerChars)
+		spinnerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#45A3FF")) // 使用中间蓝色
+		return spinnerStyle.Render(spinnerChars[spinnerIdx]) + " " + styledText.String()
+	}
+	return styledText.String()
 }
 
 // loadLyricsForTrack 为指定曲目加载歌词
