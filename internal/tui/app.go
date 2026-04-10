@@ -1425,6 +1425,16 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if a.selectedIndex < len(a.playlists) {
 				selectedPlaylist := a.playlists[a.selectedIndex]
 
+				// 检查是否正在播放同一个播放列表
+				currentState := a.player.GetState()
+				if currentState.IsPlaying &&
+				   currentState.CurrentSong != nil &&
+				   currentState.CurrentPlaylistName == selectedPlaylist.Name {
+				// 正在播放同一列表，直接切换视图，不中断播放
+				a.currentView = ViewPlayer
+				return a, a.startPlayerUpdateTicker()
+				}
+
 				if len(selectedPlaylist.Items) > 0 {
 					// 设置当前播放列表到 Player
 					a.player.SetCurrentPlaylist(selectedPlaylist.Name, selectedPlaylist.Items)
