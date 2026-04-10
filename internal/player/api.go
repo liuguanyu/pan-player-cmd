@@ -89,6 +89,13 @@ func (p *Player) SetOnTrackPlay(callback func(*models.PlaylistItem)) {
 	p.onTrackPlay = callback
 }
 
+// SetCurrentFsID 设置当前播放音频的 fsID
+func (p *Player) SetCurrentFsID(fsID int64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.core.currentFsID = fsID
+}
+
 // LoadTrack 非阻塞加载音轨
 func (p *Player) LoadTrack(ctx context.Context, track *models.PlaylistItem) error {
 	// 先停止当前播放，避免多个音频流同时播放
@@ -107,6 +114,8 @@ func (p *Player) LoadTrack(ctx context.Context, track *models.PlaylistItem) erro
 
 	p.mu.Lock()
 	p.currentTrack = track
+	// 设置当前播放音频的 fsID（用于缓存访问）
+	p.core.currentFsID = track.FsID
 	p.mu.Unlock()
 
 	// 更新播放状态中的当前歌曲
@@ -346,6 +355,8 @@ func (p *Player) GetCurrentPlaylist() *models.Playlist {
 func (p *Player) SetCurrentSong(track *models.PlaylistItem) {
 	p.mu.Lock()
 	p.currentTrack = track
+	// 设置当前播放音频的 fsID（用于缓存访问）
+	p.core.currentFsID = track.FsID
 	p.mu.Unlock()
 
 	// 更新播放状态中的当前歌曲

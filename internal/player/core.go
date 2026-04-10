@@ -23,6 +23,9 @@ type PlayerCore struct {
 	// 实时音频分析器
 	analyzer *analyzer.RealTimeAnalyzer
 	cache    *analyzer.AudioFeatureCache
+
+	// 当前播放音频的 fsID（用于缓存访问）
+	currentFsID int64
 }
 
 // NewPlayerCore 创建播放器核心
@@ -168,7 +171,7 @@ func (pc *PlayerCore) SetStream(streamer beep.StreamSeekCloser, format beep.Form
 	if pc.analyzer != nil {
 		pc.analyzer.Stop()
 	}
-	pc.analyzer = analyzer.NewRealTimeAnalyzer(streamer, format, pc.cache)
+	pc.analyzer = analyzer.NewRealTimeAnalyzer(streamer, format, pc.cache, pc.currentFsID)
 	pc.analyzer.Start()
 }
 

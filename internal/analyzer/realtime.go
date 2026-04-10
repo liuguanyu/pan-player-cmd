@@ -1,12 +1,188 @@
 package analyzer
 
 import (
+	"fmt"
+	"io"
 	"math"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/gopxl/beep"
+	"github.com/gopxl/beep/mp3"
+	"github.com/gopxl/beep/wav"
+	"github.com/gopxl/beep/flac"
+	"github.com/gopxl/beep/vorbis"
 	"github.com/liuguanyu/pan-player-cmd/internal/models"
+	"github.com/liuguanyu/pan-player-cmd/internal/utils"
 )
+
+// AudioFormat 音频格式枚举
+type AudioFormat int
+
+const (
+	FormatUnknown AudioFormat = iota
+	FormatMP3
+	FormatWAV
+	FormatFLAC
+	FormatOGG
+	FormatM4A
+	FormatAAC
+)
+
+// String 返回格式的字符串表示
+func (af AudioFormat) String() string {
+	switch {
+	case af == FormatMP3:
+		return "MP3"
+	case af == FormatWAV:
+		return "WAV"
+	case af == FormatFLAC:
+		return "FLAC"
+	case af == FormatOGG:
+		return "OGG"
+	case af == FormatM4A:
+		return "M4A"
+	case af == FormatAAC:
+		return "AAC"
+	default:
+		return "Unknown"
+	}
+}
+
+// DetectFormatByFilename 通过文件扩展名检测格式
+func DetectFormatByFilename(filename string) AudioFormat {
+	switch {
+	case len(filename) >= 4 && filename[len(filename)-4:] == ".mp3":
+		return FormatMP3
+	case len(filename) >= 4 && filename[len(filename)-4:] == ".wav":
+		return FormatWAV
+	case len(filename) >= 5 && filename[len(filename)-5:] == ".flac":
+		return FormatFLAC
+	case len(filename) >= 4 && filename[len(filename)-4:] == ".ogg":
+		return FormatOGG
+	case len(filename) >= 4 && filename[len(filename)-4:] == ".m4a":
+		return FormatM4A
+	case len(filename) >= 4 && filename[len(filename)-4:] == ".aac":
+		return FormatAAC
+	}
+	return FormatUnknown
+}
+
+// DetectFormatByMagic 通过文件魔数检测格式
+func DetectFormatByMagic(r io.ReadSeeker) (AudioFormat, error) {
+	header := make([]byte, 12)
+	n, err := r.Read(header)
+	if err != nil {
+		return FormatUnknown, err
+	}
+	if n < 4 {
+		return FormatUnknown, fmt.Errorf("file too small")
+	}
+
+	// 回到文件开头
+	if _, err := r.Seek(0, io.SeekStart); err != nil {
+		return FormatUnknown, err
+	}
+
+	// ID3v2 标记 (MP3)
+	if string(header[0:3]) == "ID3" {
+		return FormatMP3, nil
+	}
+
+	// FLAC 标记
+	if string(header[0:4]) == "fLaC" {
+		return FormatFLAC, nil
+	}
+
+	// OGG 标记
+	if string(header[0:4]) == "OggS" {
+		return FormatOGG, nil
+	}
+
+	// RIFF 标记 (WAV)
+	if string(header[0:4]) == "RIFF" && n >= 12 {
+		fmtStr := string(header[8:12])
+		if fmtStr == "WAVE" {
+			return FormatWAV, nil
+		}
+	}
+
+	// MP3 帧头检测 (帧同步字节: 0xFF 0xE0 - 0xFF 0xFF)
+	if header[0] == 0xFF && (header[1]&0xE0) == 0xE0 {
+		return FormatMP3, nil
+	}
+
+	// M4A 标记 (MP4 容器)
+	if n >= 12 && string(header[4:8]) == "ftyp" {
+		brand := string(header[8:12])
+		if brand == "M4A " || brand == "M4B " || brand == "mp42" || brand == "isom" || brand == "M4V " {
+			return FormatM4A, nil
+		}
+	}
+
+	return FormatUnknown, fmt.Errorf("unknown format")
+}
+
+// IsSupported 检查格式是否支持
+func IsSupported(format AudioFormat) bool {
+	switch format {
+	case FormatMP3, FormatWAV, FormatFLAC, FormatOGG, FormatM4A, FormatAAC:
+		return true
+	}
+	return false
+}
+
+// GetDecoder 根据格式获取解码器
+func GetDecoder(format AudioFormat) (Decoder, error) {
+	switch format {
+	case FormatMP3:
+		return &MP3Decoder{}, nil
+	case FormatWAV:
+		return &WAVDecoder{}, nil
+	case FormatFLAC:
+		return &FLACDecoder{}, nil
+	case FormatOGG:
+		return &OGGDecoder{}, nil
+	case FormatM4A, FormatAAC:
+		return nil, fmt.Errorf("M4A/AAC requires FFmpeg streaming decoder, not standard decoder")
+	default:
+		return nil, fmt.Errorf("unsupported format: %s", format)
+	}
+}
+
+// Decoder 解码器接口
+type Decoder interface {
+	Decode(io.ReadCloser) (beep.StreamSeekCloser, beep.Format, error)
+}
+
+// MP3Decoder MP3 解码器
+type MP3Decoder struct{}
+
+func (d *MP3Decoder) Decode(r io.ReadCloser) (beep.StreamSeekCloser, beep.Format, error) {
+	return mp3.Decode(r)
+}
+
+// WAVDecoder WAV 解码器
+type WAVDecoder struct{}
+
+func (d *WAVDecoder) Decode(r io.ReadCloser) (beep.StreamSeekCloser, beep.Format, error) {
+	return wav.Decode(r)
+}
+
+// FLACDecoder FLAC 解码器
+type FLACDecoder struct{}
+
+func (d *FLACDecoder) Decode(r io.ReadCloser) (beep.StreamSeekCloser, beep.Format, error) {
+	return flac.Decode(r)
+}
+
+// OGGDecoder OGG 解码器
+type OGGDecoder struct{}
+
+func (d *OGGDecoder) Decode(r io.ReadCloser) (beep.StreamSeekCloser, beep.Format, error) {
+	return vorbis.Decode(r)
+}
 
 // RealTimeAnalyzer 实时音频特征分析器
 type RealTimeAnalyzer struct {
@@ -23,10 +199,13 @@ type RealTimeAnalyzer struct {
 
 	// 缓存引用
 	cache *AudioFeatureCache
+
+	// 音频文件的 fsID（用于访问音频缓存）
+	fsID int64
 }
 
 // NewRealTimeAnalyzer 创建实时分析器
-func NewRealTimeAnalyzer(streamer beep.StreamSeekCloser, format beep.Format, cache *AudioFeatureCache) *RealTimeAnalyzer {
+func NewRealTimeAnalyzer(streamer beep.StreamSeekCloser, format beep.Format, cache *AudioFeatureCache, fsID int64) *RealTimeAnalyzer {
 	return &RealTimeAnalyzer{
 		streamer:    streamer,
 		format:      format,
@@ -34,6 +213,7 @@ func NewRealTimeAnalyzer(streamer beep.StreamSeekCloser, format beep.Format, cac
 		featureChan: make(chan models.RealtimeFeatures, 10),
 		stopChan:    make(chan struct{}),
 		cache:       cache,
+		fsID:        fsID,
 	}
 }
 
@@ -91,61 +271,87 @@ func (rta *RealTimeAnalyzer) analyzeLoop() {
 }
 
 // readCurrentWindow 读取当前窗口的音频样本
+// 使用缓存的音频文件进行分析，避免干扰播放流
 func (rta *RealTimeAnalyzer) readCurrentWindow(currentPos, windowSize float64) []float64 {
 	windowSamples := int(rta.sampleRate.N(time.Duration(windowSize * float64(time.Second))))
 	if windowSamples <= 0 {
 		return nil
 	}
 
-	totalSamples := rta.streamer.Len()
-	if totalSamples <= 0 {
+	// 使用缓存文件进行分析
+	// 缓存文件路径：~/.pan-player/cache/<fsID>.audio
+	cacheDir := utils.CacheDir()
+	cacheFilePath := filepath.Join(cacheDir, fmt.Sprintf("%d.audio", rta.fsID))
+
+	// 检查缓存文件是否存在
+	if _, err := os.Stat(cacheFilePath); os.IsNotExist(err) {
 		return nil
 	}
 
-	stereo := make([][2]float64, windowSamples)
-	savedPos := rta.streamer.Position()
-
-	// 计算起始位置（采样点）
-	startPos := rta.sampleRate.N(time.Duration(currentPos * float64(time.Second)))
-	if startPos < 0 {
-		startPos = 0
-	}
-
-	// 检查是否超出范围
-	if startPos >= totalSamples {
-		rta.streamer.Seek(savedPos)
+	// 打开缓存文件
+	file, err := os.Open(cacheFilePath)
+	if err != nil {
 		return nil
 	}
+	defer file.Close()
 
-	// 确保不超出文件末尾
-	remainingSamples := totalSamples - startPos
-	if remainingSamples < windowSamples {
-		// 如果剩余数据不足，调整窗口大小
-		windowSamples = remainingSamples
-		if windowSamples <= 0 {
-			rta.streamer.Seek(savedPos)
+	// 使用 beep 解码器解码缓存文件
+	// 这需要知道文件格式，我们通过文件扩展名和魔数检测
+	formatType := DetectFormatByFilename(cacheFilePath)
+	if formatType == FormatUnknown {
+		// 尝试通过魔数检测
+		file.Seek(0, io.SeekStart)
+		if formatType, err = DetectFormatByMagic(file); err != nil {
 			return nil
 		}
-		// 重新分配缓冲区
-		stereo = make([][2]float64, windowSamples)
 	}
 
-	rta.streamer.Seek(startPos)
-	n, ok := rta.streamer.Stream(stereo)
-	if !ok || n == 0 {
-		rta.streamer.Seek(savedPos)
+	// 重置文件指针
+	file.Seek(0, io.SeekStart)
+
+	// 使用相应的解码器
+	decoder, err := GetDecoder(formatType)
+	if err != nil {
 		return nil
 	}
 
-	rta.streamer.Seek(savedPos)
+	streamer, format, err := decoder.Decode(file)
+	if err != nil {
+		return nil
+	}
+	defer streamer.Close()
 
-	// 转为单声道
-	mono := make([]float64, n)
-	for i := 0; i < n; i++ {
-		mono[i] = (stereo[i][0] + stereo[i][1]) / 2.0
+	// 获取当前播放位置对应的样本索引
+	currentSample := int(rta.sampleRate.N(time.Duration(currentPos * float64(time.Second))))
+	windowStart := currentSample
+	windowEnd := windowStart + windowSamples
+
+	// 从流中读取窗口数据
+	// beep 使用 [][2]float64 格式，每个元素是左右声道
+	samples := make([]float64, 0, windowSamples)
+	buf := make([][2]float64, 512) // 缓冲区
+
+	for i := 0; i < windowEnd; {
+		// 读取一批样本
+		n, ok := streamer.Stream(buf)
+		if !ok || n == 0 {
+			break
+		}
+
+		// 处理这批样本
+		for j := 0; j < n && i < windowEnd; j, i = j+1, i+1 {
+			// 跳过前面的样本
+			if i < windowStart {
+				continue
+			}
+
+			// 平均左右声道
+			sample := (buf[j][0] + buf[j][1]) / 2.0
+			samples = append(samples, sample)
+		}
 	}
 
-	return mono
+	return samples
 }
 
 // analyzeFeatures 分析音频特征
