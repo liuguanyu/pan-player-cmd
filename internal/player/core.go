@@ -6,6 +6,8 @@ import (
 	"github.com/gopxl/beep"
 	"github.com/gopxl/beep/effects"
 	"github.com/gopxl/beep/speaker"
+	"github.com/liuguanyu/pan-player-cmd/internal/analyzer"
+	"github.com/liuguanyu/pan-player-cmd/internal/models"
 	"github.com/liuguanyu/pan-player-cmd/internal/utils"
 )
 
@@ -17,6 +19,17 @@ type PlayerCore struct {
 	format     beep.Format
 	isPlaying  bool
 	onTrackEnd func()
+
+	// 实时音频分析器
+	analyzer *analyzer.RealTimeAnalyzer
+	cache    *analyzer.AudioFeatureCache
+}
+
+// NewPlayerCore 创建播放器核心
+func NewPlayerCore(cache *analyzer.AudioFeatureCache) *PlayerCore {
+	return &PlayerCore{
+		cache: cache,
+	}
 }
 
 // SetOnTrackEnd 设置播放结束时的回调函数
@@ -73,6 +86,12 @@ func (pc *PlayerCore) Stop() {
 
 	pc.volume = nil
 	pc.isPlaying = false
+
+	// 停止分析器
+	if pc.analyzer != nil {
+		pc.analyzer.Stop()
+		pc.analyzer = nil
+	}
 }
 
 // Seek 跳转到指定位置（秒）
@@ -144,6 +163,13 @@ func (pc *PlayerCore) SetStream(streamer beep.StreamSeekCloser, format beep.Form
 
 	pc.isPlaying = false
 	utils.GetLogger().Info("SetStream 完成，音频流已发送到 speaker (采样率: %d)", format.SampleRate)
+
+	// 启动实时分析器
+	if pc.analyzer != nil {
+		pc.analyzer.Stop()
+	}
+	pc.analyzer = analyzer.NewRealTimeAnalyzer(streamer, format, pc.cache)
+	pc.analyzer.Start()
 }
 
 // IsPlaying 返回是否正在播放
@@ -197,4 +223,12 @@ func (pc *PlayerCore) SetVolume(volume float64) {
 // GetIsPlaying 返回是否正在播放（用于状态更新）
 func (pc *PlayerCore) GetIsPlaying() bool {
 	return pc.isPlaying
+}
+
+// GetRealTimeFeatures 获取实时特征通道
+func (pc *PlayerCore) GetRealTimeFeatures() <-chan models.RealtimeFeatures {
+	if pc.analyzer == nil {
+		return nil
+	}
+	return pc.analyzer.GetFeatureChan()
 }

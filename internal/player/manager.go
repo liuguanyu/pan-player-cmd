@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/liuguanyu/pan-player-cmd/internal/analyzer"
 	"github.com/liuguanyu/pan-player-cmd/internal/models"
 )
 
@@ -15,9 +16,22 @@ type PlaybackManager struct {
 	isStream   bool
 	// 用于从 decoder 传递时长信息（异步）
 	durationChan chan float64
+	// 音频特征缓存
+	featureCache *analyzer.AudioFeatureCache
+}
+
+func NewPlaybackManager() *PlaybackManager {
+	return &PlaybackManager{
+		state:        &models.PlaybackState{},
+		durationChan: make(chan float64, 10),
+		featureCache: analyzer.NewAudioFeatureCache(),
+	}
 }
 
 func (pm *PlaybackManager) Start() {
+	// 初始化 PlayerCore 并传入缓存
+	pm.playerCore = NewPlayerCore(pm.featureCache)
+
 	// 启动进度更新器
 	go pm.updatePositionLoop()
 }

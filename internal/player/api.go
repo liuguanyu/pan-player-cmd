@@ -52,16 +52,12 @@ func NewPlayer(cfg *PlayerConfig, apiClient *api.BaiduPanClient) *Player {
 		stopChan:  make(chan struct{}),
 		core:      playerCore,
 		decoder:   &AudioDecoder{apiClient: apiClient, cacheDir: cfg.CacheDir},
-		manager: &PlaybackManager{
-			playerCore: playerCore,
-			state: &models.PlaybackState{
-				Volume:       0.6,                      // 默认音量60%
-				PlaybackMode: models.PlaybackModeOrder, // 默认顺序播放
-				ShowLyrics:   true,                     // 默认显示歌词
-			},
-			durationChan: make(chan float64, 10), // 初始化 durationChan
-		},
 	}
+
+	// 使用 NewPlaybackManager 创建播放管理器
+	p.manager = NewPlaybackManager()
+	// 设置 PlayerCore 引用
+	p.manager.SetPlayerCore(playerCore)
 
 	// 初始化扬声器 - 必须在任何播放操作之前完成
 	logger := utils.GetLogger()
