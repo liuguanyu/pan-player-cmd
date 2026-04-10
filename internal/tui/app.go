@@ -642,6 +642,14 @@ func (a *App) renderPlayerView() string {
 	b.WriteString(progressBar)
 	b.WriteString("\n\n")
 
+	// 实时音频特征显示
+	audioFeatures := a.renderAudioFeatures()
+	if audioFeatures != "" {
+		b.WriteString(audioFeatures)
+		b.WriteString("\n")
+	}
+
+
 	// 歌词显示（当前行高亮，显示前后2行）
 	if state.ShowLyrics && len(a.currentLyrics) > 0 {
 		lyricsView := a.renderLyrics(state.CurrentTime)
