@@ -97,12 +97,37 @@ func (rta *RealTimeAnalyzer) readCurrentWindow(currentPos, windowSize float64) [
 		return nil
 	}
 
+	totalSamples := rta.streamer.Len()
+	if totalSamples <= 0 {
+		return nil
+	}
+
 	stereo := make([][2]float64, windowSamples)
 	savedPos := rta.streamer.Position()
 
+	// 计算起始位置（采样点）
 	startPos := rta.sampleRate.N(time.Duration(currentPos * float64(time.Second)))
 	if startPos < 0 {
 		startPos = 0
+	}
+
+	// 检查是否超出范围
+	if startPos >= totalSamples {
+		rta.streamer.Seek(savedPos)
+		return nil
+	}
+
+	// 确保不超出文件末尾
+	remainingSamples := totalSamples - startPos
+	if remainingSamples < windowSamples {
+		// 如果剩余数据不足，调整窗口大小
+		windowSamples = remainingSamples
+		if windowSamples <= 0 {
+			rta.streamer.Seek(savedPos)
+			return nil
+		}
+		// 重新分配缓冲区
+		stereo = make([][2]float64, windowSamples)
 	}
 
 	rta.streamer.Seek(startPos)
