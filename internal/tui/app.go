@@ -37,6 +37,7 @@ type App struct {
 	playlists       []models.Playlist
 	currentPlaylist *models.Playlist
 	selectedIndex   int
+	scrollOffset    int // 播放列表滚动偏移量
 
 	// 登录状态
 	isLoggedIn    bool
@@ -113,6 +114,11 @@ func NewApp(cfg *config.Config) *App {
 		currentView: ViewLogin, // 直接进入登录界面
 	}
 
+	// 设置歌曲播放回调，用于更新最近播放记录
+	pl.SetOnTrackPlay(func(track *models.PlaylistItem) {
+		app.updateRecentPlaylist(track)
+	})
+
 	return app
 }
 
@@ -157,7 +163,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			interval = time.Duration(msg.DeviceAuth.Interval) * time.Second
 		}
 		return a, a.startPolling(msg.DeviceAuth.DeviceCode, interval)
-
+	
 	case PlaylistsLoadedMsg:
 		a.playlists = msg.Playlists
 		// 不要在这里设置 currentPlaylist，保留之前的选择
@@ -165,8 +171,19 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(a.playlists) > 0 && a.selectedIndex >= len(a.playlists) {
 			a.selectedIndex = 0
 		}
+		// 重置滚动偏移，因为播放列表顺序可能已改变（"最近播放"添加到首位）
+		a.scrollOffset = 0
+		// 确保选中的项可见
+		if len(a.playlists) > 0 {
+			visibleHeight := a.height - 6
+			if visibleHeight < 5 {
+				visibleHeight = 5
+			}
+			if a.selectedIndex >= visibleHeight {
+				a.scrollOffset = a.selectedIndex - visibleHeight + 1
+			}
+		}
 		return a, nil
-
 	case ForceRenderMsg:
 		// 强制重新渲染
 		a.version++
@@ -455,7 +472,40 @@ func (a *App) renderPlaylistView() string {
 			Padding(0, 2).
 			Bold(true)
 
-		for i, pl := range a.playlists {
+		// 计算可见区域（预留标题、状态栏、帮助栏的空间）
+		// 标题：2行，状态栏：2行，帮助栏：2行，共预留6行
+		visibleHeight := a.height - 6
+		if visibleHeight < 5 {
+			visibleHeight = 5 // 最少显示5个
+		}
+
+		// 计算滚动范围，确保选中项可见
+		if a.selectedIndex < a.scrollOffset {
+			a.scrollOffset = a.selectedIndex
+		} else if a.selectedIndex >= a.scrollOffset+visibleHeight {
+			a.scrollOffset = a.selectedIndex - visibleHeight + 1
+		}
+
+		// 确保scrollOffset不超出范围
+		maxOffset := len(a.playlists) - visibleHeight
+		if maxOffset < 0 {
+			maxOffset = 0
+		}
+		if a.scrollOffset > maxOffset {
+			a.scrollOffset = maxOffset
+		}
+		if a.scrollOffset < 0 {
+			a.scrollOffset = 0
+		}
+
+		// 只渲染可见区域的列表项
+		endIndex := a.scrollOffset + visibleHeight
+		if endIndex > len(a.playlists) {
+			endIndex = len(a.playlists)
+		}
+
+		for i := a.scrollOffset; i < endIndex; i++ {
+			pl := a.playlists[i]
 			// 计算总大小
 			var totalSize int64
 			for _, item := range pl.Items {
@@ -474,6 +524,16 @@ func (a *App) renderPlaylistView() string {
 			}
 			b.WriteString(itemLine)
 			b.WriteString("\n")
+		}
+
+		// 如果有更多项，显示提示
+		if len(a.playlists) > visibleHeight {
+			b.WriteString("\n")
+			scrollHint := lipgloss.NewStyle().Foreground(lipgloss.Color("#666"))
+			if a.scrollOffset > 0 || endIndex < len(a.playlists) {
+				b.WriteString(scrollHint.Render(fmt.Sprintf("显示 %d-%d / %d", a.scrollOffset+1, endIndex, len(a.playlists))))
+				b.WriteString("\n")
+			}
 		}
 	}
 
@@ -1328,6 +1388,8 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			a.currentView = ViewPlaylist
 			a.inputBuffer = "" // 清空输入缓冲
+			// 重新加载播放列表以更新"最近播放"
+			return a, a.loadPlaylists()
 		}
 		return a, nil
 
@@ -2103,4 +2165,38 @@ func (a *App) addFolderFiles(folderPath string) tea.Cmd {
 			return FolderFilesLoadedMsg{Files: files}
 		},
 	)
+}
+
+// updateRecentPlaylist 更新最近播放列表
+func (a *App) updateRecentPlaylist(track *models.PlaylistItem) {
+	// 获取最近播放列表
+	recentPlaylist := a.playlist.GetPlaylist("最近播放")
+	if recentPlaylist == nil {
+		return
+	}
+
+	// 创建新的最近播放列表（最多保留30首）
+	var recentSongs []*models.PlaylistItem
+	if len(recentPlaylist.Items) > 0 {
+		// 将现有歌曲复制到新列表，但移除当前歌曲（如果存在）
+		for _, item := range recentPlaylist.Items {
+			if item.FsID != track.FsID {
+				recentSongs = append(recentSongs, item)
+			}
+		}
+	}
+
+	// 将新歌曲添加到最前面
+	recentSongs = append([]*models.PlaylistItem{track}, recentSongs...)
+
+	// 限制最多30首
+	if len(recentSongs) > 30 {
+		recentSongs = recentSongs[:30]
+	}
+
+	// 更新最近播放列表
+	err := a.playlist.UpdateRecentSongs(recentSongs)
+	if err != nil {
+		utils.GetLogger().Error("更新最近播放列表失败: %v", err)
+	}
 }

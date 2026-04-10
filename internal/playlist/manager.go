@@ -68,6 +68,9 @@ func (m *Manager) LoadPlaylists() error {
 	// 确保有"最近播放"列表
 	m.ensureRecentPlaylist()
 
+	// 排序播放列表："最近播放"固定在第一位，其他按创建时间倒排
+	m.sortPlaylists()
+
 	return nil
 }
 
@@ -341,6 +344,8 @@ func (m *Manager) UpdateRecentSongs(songs []*models.PlaylistItem) error {
 		UpdateTime:  time.Now().Unix(),
 	}}, m.playlists...)
 
+	// 重新排序确保"最近播放"在第一位
+	m.sortPlaylists()
 	return m.savePlaylistsWithoutLock()
 }
 
@@ -569,3 +574,37 @@ func isAudioFile(filename string) bool {
 	}
 	return audioFormats[ext]
 }
+
+// sortPlaylists 排序播放列表："最近播放"固定在第一位，其他按创建时间倒排
+func (m *Manager) sortPlaylists() {
+	if len(m.playlists) <= 1 {
+		return
+	}
+
+	var recentPlaylist *models.Playlist
+	var otherPlaylists []models.Playlist
+
+	// 分离"最近播放"和其他列表
+	// 使用索引访问，避免循环变量指针问题
+	for i := range m.playlists {
+		if m.playlists[i].Name == "最近播放" {
+			recentPlaylist = &m.playlists[i]
+		} else {
+			otherPlaylists = append(otherPlaylists, m.playlists[i])
+		}
+	}
+
+	// 对其他列表按创建时间倒序排序
+	sort.Slice(otherPlaylists, func(i, j int) bool {
+		return otherPlaylists[i].CreateTime > otherPlaylists[j].CreateTime
+	})
+
+	// 重新组合：最近播放在第一位（如果存在），然后是其他列表
+	m.playlists = nil
+	if recentPlaylist != nil {
+		m.playlists = append(m.playlists, *recentPlaylist)
+	}
+	m.playlists = append(m.playlists, otherPlaylists...)
+}
+
+

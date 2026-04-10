@@ -27,6 +27,7 @@ type Player struct {
 	currentIndex    int
 	loadingCancel   context.CancelFunc // 用于取消正在进行的加载
 	loadingMu       sync.Mutex         // 保护 loadingCancel
+	onTrackPlay     func(*models.PlaylistItem) // 歌曲开始播放时的回调函数
 }
 
 // PlayerConfig 播放器配置
@@ -83,6 +84,13 @@ func NewPlayer(cfg *PlayerConfig, apiClient *api.BaiduPanClient) *Player {
 	p.manager.Start()
 
 	return p
+}
+
+// SetOnTrackPlay 设置歌曲开始播放时的回调函数
+func (p *Player) SetOnTrackPlay(callback func(*models.PlaylistItem)) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.onTrackPlay = callback
 }
 
 // LoadTrack 非阻塞加载音轨
@@ -164,6 +172,13 @@ func (p *Player) LoadTrack(ctx context.Context, track *models.PlaylistItem) erro
 		state := p.manager.GetState()
 		state.IsPlaying = true
 		p.mu.Unlock()
+
+		// 触发歌曲开始播放的回调
+		p.mu.RLock()
+		if p.onTrackPlay != nil {
+			go p.onTrackPlay(track)
+		}
+		p.mu.RUnlock()
 
 		utils.GetLogger().Info("音频加载完成，自动开始播放")
 	}()
