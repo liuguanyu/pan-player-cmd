@@ -80,6 +80,10 @@ type App struct {
 
 	// 播放状态持久化
 	lastPlaybackState *models.PlaybackState
+
+	// 实时音频特征
+	realtimeFeatures models.RealtimeFeatures
+	featuresChan     <-chan models.RealtimeFeatures
 }
 
 // ViewType 视图类型
@@ -118,6 +122,9 @@ func NewApp(cfg *config.Config) *App {
 	pl.SetOnTrackPlay(func(track *models.PlaylistItem) {
 		app.updateRecentPlaylist(track)
 	})
+
+	// 初始化实时音频特征通道
+	app.featuresChan = pl.GetRealTimeFeatures()
 
 	return app
 }
@@ -277,7 +284,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.loadingFiles {
 			a.loadingDots++
 			return a, a.tickLoadingAnimation()
-		}
+	
+		case AudioFeaturesMsg:
+			// 更新实时音频特征
+			a.realtimeFeatures = msg.Features
+			// 继续监听下一次更新
+			return a, a.listenAudioFeatures()
+
+	}
 	}
 
 	return a, tea.Batch(cmds...)

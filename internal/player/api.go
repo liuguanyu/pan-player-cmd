@@ -390,3 +390,8 @@ func (p *Player) SetCurrentIndex(index int) {
 	p.currentIndex = index
 	p.mu.Unlock()
 }
+
+// GetRealTimeFeatures 获取实时音频特征通道
+func (p *Player) GetRealTimeFeatures() <-chan models.RealtimeFeatures {
+	return p.core.GetRealTimeFeatures()
+}
