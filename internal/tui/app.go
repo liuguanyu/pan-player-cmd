@@ -284,14 +284,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.loadingFiles {
 			a.loadingDots++
 			return a, a.tickLoadingAnimation()
-	
-		case AudioFeaturesMsg:
-			// 更新实时音频特征
-			a.realtimeFeatures = msg.Features
-			// 继续监听下一次更新
-			return a, a.listenAudioFeatures()
+		}
+		return a, tea.Batch(cmds...)
 
-	}
+	case AudioFeaturesMsg:
+		// 更新实时音频特征
+		a.realtimeFeatures = msg.Features
+		// 继续监听下一次更新
+		return a, a.listenAudioFeatures()
 	}
 
 	return a, tea.Batch(cmds...)
