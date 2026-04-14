@@ -33,11 +33,11 @@ type BaiduPanConfig struct {
 }
 
 type PlayerConfig struct {
-	Volume       int    `yaml:"volume"`        // 0-100
-	PlayMode     string `yaml:"play_mode"`     // single, list, random
-	AutoPlay     bool   `yaml:"auto_play"`
-	ShowLyrics   bool   `yaml:"show_lyrics"`
-	AudioDevice  string `yaml:"audio_device"`
+	Volume      int    `yaml:"volume"`    // 0-100
+	PlayMode    string `yaml:"play_mode"` // single, list, random
+	AutoPlay    bool   `yaml:"auto_play"`
+	ShowLyrics  bool   `yaml:"show_lyrics"`
+	AudioDevice string `yaml:"audio_device"`
 }
 
 type PlaylistConfig struct {
@@ -47,10 +47,10 @@ type PlaylistConfig struct {
 }
 
 type UIConfig struct {
-	Theme      string `yaml:"theme"`       // dark, light
-	Language   string `yaml:"language"`    // zh-CN, en-US
-	ShowHelp   bool   `yaml:"show_help"`
-	ColorLyrics bool  `yaml:"color_lyrics"`
+	Theme       string `yaml:"theme"`    // dark, light
+	Language    string `yaml:"language"` // zh-CN, en-US
+	ShowHelp    bool   `yaml:"show_help"`
+	ColorLyrics bool   `yaml:"color_lyrics"`
 }
 
 func DefaultConfig() *Config {

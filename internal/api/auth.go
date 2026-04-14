@@ -42,9 +42,9 @@ func (c *BaiduPanClient) GetDeviceCode(clientID, clientSecret string) (*OAuthDev
 
 	resp, err := c.client.R().
 		SetQueryParams(map[string]string{
-			"client_id":    clientID,
+			"client_id":     clientID,
 			"response_type": "device_code",
-			"scope":        "basic,netdisk",
+			"scope":         "basic,netdisk",
 		}).
 		SetHeader("User-Agent", "pan.baidu.com").
 		Get(url)

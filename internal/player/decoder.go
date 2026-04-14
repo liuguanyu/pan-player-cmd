@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/gopxl/beep"
-	"github.com/gopxl/beep/mp3"
-	"github.com/gopxl/beep/wav"
 	"github.com/gopxl/beep/flac"
+	"github.com/gopxl/beep/mp3"
 	"github.com/gopxl/beep/vorbis"
+	"github.com/gopxl/beep/wav"
 	"github.com/liuguanyu/pan-player-cmd/internal/api"
 	"github.com/liuguanyu/pan-player-cmd/internal/models"
 	"github.com/liuguanyu/pan-player-cmd/internal/utils"

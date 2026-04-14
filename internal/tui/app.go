@@ -80,6 +80,23 @@ type App struct {
 
 	// 播放状态持久化
 	lastPlaybackState *models.PlaybackState
+
+	// 歌词管理器
+	lyricsManager *lyrics.Manager
+	// 歌词搜索UI状态
+	lyricSearchUI LyricSearchUI
+	// 歌词搜索词
+	lyricSearchKeyword string
+	// 歌词搜索词光标位置
+	lyricSearchCursor int
+}
+
+// LyricSearchUI 歌词搜索UI状态
+type LyricSearchUI struct {
+	Results       []models.LyricSearchResult
+	SelectedIndex int
+	Visible       bool
+	Editing       bool // 是否正在编辑搜索词
 }
 
 // ViewType 视图类型
@@ -95,6 +112,7 @@ const (
 	ViewRenamePlaylist
 	ViewFileBrowser
 	ViewSplash
+	ViewLyricSearch
 )
 
 // NewApp 创建新的 TUI 应用
@@ -107,11 +125,12 @@ func NewApp(cfg *config.Config) *App {
 	plManager := playlist.NewManager(cfg.App.DataDir)
 
 	app := &App{
-		config:      cfg,
-		api:         apiClient,
-		player:      pl,
-		playlist:    plManager,
-		currentView: ViewLogin, // 直接进入登录界面
+		config:         cfg,
+		api:            apiClient,
+		player:         pl,
+		playlist:       plManager,
+		currentView:    ViewLogin, // 直接进入登录界面
+		lyricsManager:  lyrics.NewManager(),
 	}
 
 	// 设置歌曲播放回调，用于更新最近播放记录
@@ -308,6 +327,8 @@ func (a *App) View() string {
 		return a.renderFileBrowserView()
 	case ViewSplash:
 		return a.renderSplashView()
+	case ViewLyricSearch:
+		return a.renderLyricSearchView()
 	default:
 		return "Unknown view"
 	}
@@ -638,7 +659,15 @@ func (a *App) renderPlayerView() string {
 	// 播放控制提示
 	b.WriteString("\n")
 	controlStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#AAA"))
-	b.WriteString(controlStyle.Render("[空格]暂停/恢复  [n]下一曲  [p]上一曲  [↑/↓]音量  [m]模式  [l]歌词  [Ctrl+Z]后台挂起  [Esc]返回"))
+
+	// 动态构建快捷键提示 - 只在有歌词时显示 'u' 键
+	var shortcutString string
+	if state.ShowLyrics && len(a.currentLyrics) > 0 {
+		shortcutString = "[空格]暂停/恢复  [n]下一曲  [p]上一曲  [↑/↓]音量  [m]模式  [l]歌词  [s]搜索歌词  [u]上传歌词  [Ctrl+Z]后台挂起  [Esc]返回"
+	} else {
+		shortcutString = "[空格]暂停/恢复  [n]下一曲  [p]上一曲  [↑/↓]音量  [m]模式  [l]歌词  [s]搜索歌词  [Ctrl+Z]后台挂起  [Esc]返回"
+	}
+	b.WriteString(controlStyle.Render(shortcutString))
 
 	return b.String()
 }
@@ -948,6 +977,8 @@ func (a *App) renderHelpView() string {
 		{"↓", "减少音量"},
 		{"m", "切换播放模式"},
 		{"l", "显示/隐藏歌词"},
+		{"s", "搜索歌词"},
+		{"u", "上传歌词到网盘"},
 	}
 	for _, shortcut := range shortcuts {
 		b.WriteString(helpStyle.Render(fmt.Sprintf("%-10s %s", shortcut.key, shortcut.desc)))
@@ -1324,7 +1355,6 @@ func (a *App) renderFileBrowserView() string {
 }
 
 // handleKeyPress 处理按键
-// handleKeyPress 处理按键
 func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// 如果在输入视图，优先处理文本输入
 	if a.currentView == ViewCreatePlaylist {
@@ -1344,6 +1374,11 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// 如果在文件浏览器视图，处理文件选择
 	if a.currentView == ViewFileBrowser {
 		return a.handleFileBrowserKeyPress(msg)
+	}
+
+	// 如果在歌词搜索视图，处理歌词搜索
+	if a.currentView == ViewLyricSearch {
+		return a.handleLyricSearchViewKeyPress(msg)
 	}
 
 	switch msg.String() {
@@ -1524,6 +1559,21 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			state := a.player.GetState()
 			state.ShowLyrics = !state.ShowLyrics
 			// 状态更新会触发 UI 重新渲染
+		}
+		return a, nil
+
+	case "s":
+		if a.currentView == ViewPlayer {
+			// 切换到歌词搜索视图
+			a.currentView = ViewLyricSearch
+			return a, a.handleLyricSearch()
+		}
+		return a, nil
+
+	case "u":
+		if a.currentView == ViewPlayer {
+			// 上传歌词到百度网盘
+			a.handleLyricUpload()
 		}
 		return a, nil
 

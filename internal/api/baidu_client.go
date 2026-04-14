@@ -1,11 +1,15 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,10 +51,10 @@ type FileInfo struct {
 
 // ListResponse 文件列表响应
 type ListResponse struct {
-	List       []FileInfo `json:"list"`
-	RequestID  int64      `json:"request_id"`
-	Errno      int        `json:"errno"`
-	ErrMsg     string     `json:"errmsg,omitempty"`
+	List      []FileInfo `json:"list"`
+	RequestID int64      `json:"request_id"`
+	Errno     int        `json:"errno"`
+	ErrMsg    string     `json:"errmsg,omitempty"`
 }
 
 // GetFileList 获取文件列表
@@ -161,13 +165,13 @@ func (c *BaiduPanClient) ListAudioFiles(ctx context.Context, dir string, page, n
 	resp, err := c.client.R().
 		SetContext(ctx).
 		SetQueryParams(map[string]string{
-			"method": "list",
+			"method":       "list",
 			"access_token": c.accessToken,
-			"dir": dir,
-			"page": fmt.Sprintf("%d", page),
-			"num": fmt.Sprintf("%d", num),
-			"order": "name",
-			"desc": "0",
+			"dir":          dir,
+			"page":         fmt.Sprintf("%d", page),
+			"num":          fmt.Sprintf("%d", num),
+			"order":        "name",
+			"desc":         "0",
 		}).
 		Get(BaiduAPIBase + "/xpan/file")
 
@@ -206,12 +210,12 @@ func (c *BaiduPanClient) ListAudioFiles(ctx context.Context, dir string, page, n
 		}
 
 		track := &models.Track{
-			ID:       fmt.Sprintf("%d", file.FsID),
-			Title:    file.ServerFilename,
-			Path:     file.Path,
-			Size:     file.Size,
-			Format:   ext[1:], // 去掉点
-			AddedAt:  time.Now(),
+			ID:      fmt.Sprintf("%d", file.FsID),
+			Title:   file.ServerFilename,
+			Path:    file.Path,
+			Size:    file.Size,
+			Format:  ext[1:], // 去掉点
+			AddedAt: time.Now(),
 		}
 
 		// 尝试查找对应的LRC文件
@@ -229,10 +233,10 @@ func (c *BaiduPanClient) GetDownloadLink(ctx context.Context, fsID int64) (strin
 	resp, err := c.client.R().
 		SetContext(ctx).
 		SetQueryParams(map[string]string{
-			"method": "filemetas",
+			"method":       "filemetas",
 			"access_token": c.accessToken,
-			"fsids": fmt.Sprintf("[%d]", fsID),
-			"dlink": "1",
+			"fsids":        fmt.Sprintf("[%d]", fsID),
+			"dlink":        "1",
 		}).
 		Get(BaiduAPIBase + "/xpan/multimedia")
 
@@ -241,8 +245,8 @@ func (c *BaiduPanClient) GetDownloadLink(ctx context.Context, fsID int64) (strin
 	}
 
 	var result struct {
-		List []DownloadInfo `json:"list"`
-		Errno int `json:"errno"`
+		List  []DownloadInfo `json:"list"`
+		Errno int            `json:"errno"`
 	}
 
 	if err := json.Unmarshal(resp.Body(), &result); err != nil {
@@ -348,12 +352,12 @@ func (c *BaiduPanClient) SearchAudioFiles(ctx context.Context, key string, page,
 	resp, err := c.client.R().
 		SetContext(ctx).
 		SetQueryParams(map[string]string{
-			"method": "search",
+			"method":       "search",
 			"access_token": c.accessToken,
-			"key": key,
-			"page": fmt.Sprintf("%d", page),
-			"num": fmt.Sprintf("%d", num),
-			"recursion": "1",
+			"key":          key,
+			"page":         fmt.Sprintf("%d", page),
+			"num":          fmt.Sprintf("%d", num),
+			"recursion":    "1",
 		}).
 		Get(BaiduAPIBase + "/xpan/file")
 
@@ -456,4 +460,132 @@ func (c *BaiduPanClient) GetAudioFilesRecursive(dir string) ([]FileInfo, error) 
 	}
 
 	return allFiles, nil
+}
+
+// UploadFile 上传文件到百度网盘（三步上传）
+
+// UploadFile 上传文件到百度网盘（三步上传）
+// 参考electron项目的上传逻辑实现
+func (c *BaiduPanClient) UploadFile(ctx context.Context, localPath, targetPath string) error {
+	// 读取文件内容
+	fileData, err := os.ReadFile(localPath)
+	if err != nil {
+		return fmt.Errorf("read file failed: %w", err)
+	}
+
+	fileSize := len(fileData)
+
+	// 计算MD5
+	md5Hash := md5.Sum(fileData)
+	md5Str := hex.EncodeToString(md5Hash[:])
+
+	// 步骤1: 预创建
+	precreateResp, err := c.client.R().
+		SetContext(ctx).
+		SetQueryParams(map[string]string{
+			"method":       "precreate",
+			"access_token": c.accessToken,
+		}).
+		SetFormData(map[string]string{
+			"path":       targetPath,
+			"size":       fmt.Sprintf("%d", fileSize),
+			"isdir":      "0",
+			"autoinit":   "1",
+			"block_list": fmt.Sprintf(`["%s"]`, md5Str),
+			"rtype":      "3", // 覆盖模式
+		}).
+		Post(BaiduAPIBase + "/xpan/file")
+
+	if err != nil {
+		return fmt.Errorf("precreate failed: %w", err)
+	}
+
+	var precreateData struct {
+		Errno      int    `json:"errno"`
+		ErrMsg     string `json:"errmsg"`
+		UploadID   string `json:"uploadid"`
+		ReturnType int    `json:"return_type"`
+	}
+
+	if err := json.Unmarshal(precreateResp.Body(), &precreateData); err != nil {
+		return fmt.Errorf("parse precreate response failed: %w", err)
+	}
+
+	if precreateData.Errno != 0 {
+		return fmt.Errorf("precreate failed: %s (%d)", precreateData.ErrMsg, precreateData.Errno)
+	}
+
+	// 秒传成功
+	if precreateData.ReturnType == 2 {
+		return nil
+	}
+
+	uploadID := precreateData.UploadID
+
+	// 步骤2: 上传分片
+	uploadURL := fmt.Sprintf(
+		"https://d.pcs.baidu.com/rest/2.0/pcs/superfile2?method=upload&access_token=%s&type=tmpfile&path=%s&uploadid=%s&partseq=0",
+		c.accessToken,
+		url.QueryEscape(targetPath),
+		uploadID,
+	)
+
+	// 使用multipart/form-data上传
+	resp, err := c.client.R().
+		SetContext(ctx).
+		SetFileReader("file", filepath.Base(localPath), bytes.NewReader(fileData)).
+		Post(uploadURL)
+
+	if err != nil {
+		return fmt.Errorf("upload chunk failed: %w", err)
+	}
+
+	var uploadResult struct {
+		Errno  int    `json:"errno"`
+		ErrMsg string `json:"errmsg"`
+	}
+
+	if err := json.Unmarshal(resp.Body(), &uploadResult); err != nil {
+		return fmt.Errorf("parse upload response failed: %w", err)
+	}
+
+	if uploadResult.Errno != 0 {
+		return fmt.Errorf("upload chunk failed: %s (%d)", uploadResult.ErrMsg, uploadResult.Errno)
+	}
+
+	// 步骤3: 创建文件
+	createResp, err := c.client.R().
+		SetContext(ctx).
+		SetQueryParams(map[string]string{
+			"method":       "create",
+			"access_token": c.accessToken,
+		}).
+		SetFormData(map[string]string{
+			"path":       targetPath,
+			"size":       fmt.Sprintf("%d", fileSize),
+			"isdir":      "0",
+			"uploadid":   uploadID,
+			"block_list": fmt.Sprintf(`["%s"]`, md5Str),
+			"rtype":      "3",
+		}).
+		Post(BaiduAPIBase + "/xpan/file")
+
+	if err != nil {
+		return fmt.Errorf("create file failed: %w", err)
+	}
+
+	var createData struct {
+		Errno  int    `json:"errno"`
+		ErrMsg string `json:"errmsg"`
+	}
+
+	if err := json.Unmarshal(createResp.Body(), &createData); err != nil {
+		return fmt.Errorf("parse create response failed: %w", err)
+	}
+
+	if createData.Errno != 0 {
+		return fmt.Errorf("create file failed: %s (%d)", createData.ErrMsg, createData.Errno)
+	}
+
+	return nil
 }

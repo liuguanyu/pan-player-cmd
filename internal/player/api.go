@@ -25,8 +25,8 @@ type Player struct {
 	currentTrack    *models.PlaylistItem
 	currentPlaylist *models.Playlist
 	currentIndex    int
-	loadingCancel   context.CancelFunc // 用于取消正在进行的加载
-	loadingMu       sync.Mutex         // 保护 loadingCancel
+	loadingCancel   context.CancelFunc         // 用于取消正在进行的加载
+	loadingMu       sync.Mutex                 // 保护 loadingCancel
 	onTrackPlay     func(*models.PlaylistItem) // 歌曲开始播放时的回调函数
 }
 

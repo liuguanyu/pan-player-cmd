@@ -606,5 +606,3 @@ func (m *Manager) sortPlaylists() {
 	}
 	m.playlists = append(m.playlists, otherPlaylists...)
 }
-
-

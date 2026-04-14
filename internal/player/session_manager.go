@@ -23,11 +23,11 @@ func DefaultSessionManagerConfig() SessionManagerConfig {
 
 // SessionSummary provides summary info about a session
 type SessionSummary struct {
-	SessionID     string
-	SourceURL     string
-	State         SessionState
-	TotalBytes    int64
-	CreatedAt     time.Time
+	SessionID      string
+	SourceURL      string
+	State          SessionState
+	TotalBytes     int64
+	CreatedAt      time.Time
 	LastAccessedAt time.Time
 }
 
@@ -314,7 +314,7 @@ func (sm *SessionManager) enforceConcurrencyLimits() {
 func (sm *SessionManager) getInactiveSessionsSortedByLRU() []string {
 	// This should be called with lock already held
 	type sessionInfo struct {
-		id            string
+		id           string
 		lastAccessed time.Time
 	}
 
@@ -323,7 +323,7 @@ func (sm *SessionManager) getInactiveSessionsSortedByLRU() []string {
 		state := session.State()
 		if state == StateCompleted || state == StateError || state == StateIdle {
 			inactive = append(inactive, sessionInfo{
-				id:            id,
+				id:           id,
 				lastAccessed: session.LastAccessedAt(),
 			})
 		}

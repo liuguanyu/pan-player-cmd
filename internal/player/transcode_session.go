@@ -31,10 +31,10 @@ type SessionEvent struct {
 
 // ProgressData contains progress information
 type ProgressData struct {
-	Percent   float64
-	Timemark  string
+	Percent    float64
+	Timemark   string
 	TotalBytes int64
-	Duration  float64
+	Duration   float64
 }
 
 // DataEvent contains data chunk information
@@ -55,21 +55,21 @@ type TranscodeSession struct {
 	sourceURL        string
 	startTimeSeconds float64
 
-	mu              sync.RWMutex
-	state           SessionState
-	totalBytes      int64
-	duration        float64
-	chunks          []*bytes.Buffer
-	mergedBuffer    *bytes.Buffer
+	mu           sync.RWMutex
+	state        SessionState
+	totalBytes   int64
+	duration     float64
+	chunks       []*bytes.Buffer
+	mergedBuffer *bytes.Buffer
 
-	ffmpegCmd       *exec.Cmd
-	cancelFunc      context.CancelFunc
-	eventChan       chan SessionEvent
-	eventListeners  map[string][]func(SessionEvent)
+	ffmpegCmd      *exec.Cmd
+	cancelFunc     context.CancelFunc
+	eventChan      chan SessionEvent
+	eventListeners map[string][]func(SessionEvent)
 
-	createdAt       time.Time
-	lastAccessedAt  time.Time
-	destroyOnce     sync.Once
+	createdAt      time.Time
+	lastAccessedAt time.Time
+	destroyOnce    sync.Once
 }
 
 // NewTranscodeSession creates a new transcode session
@@ -78,21 +78,21 @@ func NewTranscodeSession(sessionID, sourceURL string, startTimeSeconds float64) 
 		sessionID:        sessionID,
 		sourceURL:        sourceURL,
 		startTimeSeconds: startTimeSeconds,
-		state:           StateIdle,
-		totalBytes:      0,
-		duration:        0,
-		chunks:          make([]*bytes.Buffer, 0),
-		mergedBuffer:    nil,
-		eventChan:       make(chan SessionEvent, 100),
-		eventListeners:  make(map[string][]func(SessionEvent)),
-		createdAt:       time.Now(),
-		lastAccessedAt:  time.Now(),
+		state:            StateIdle,
+		totalBytes:       0,
+		duration:         0,
+		chunks:           make([]*bytes.Buffer, 0),
+		mergedBuffer:     nil,
+		eventChan:        make(chan SessionEvent, 100),
+		eventListeners:   make(map[string][]func(SessionEvent)),
+		createdAt:        time.Now(),
+		lastAccessedAt:   time.Now(),
 	}
 }
 
 // Getters
-func (ts *TranscodeSession) SessionID() string     { return ts.sessionID }
-func (ts *TranscodeSession) SourceURL() string     { return ts.sourceURL }
+func (ts *TranscodeSession) SessionID() string    { return ts.sessionID }
+func (ts *TranscodeSession) SourceURL() string    { return ts.sourceURL }
 func (ts *TranscodeSession) StartTime() float64   { return ts.startTimeSeconds }
 func (ts *TranscodeSession) State() SessionState  { return ts.state }
 func (ts *TranscodeSession) IsComplete() bool     { return ts.state == StateCompleted }
@@ -269,8 +269,8 @@ func (ts *TranscodeSession) waitProcess() {
 		ts.state = StateError
 		ts.mu.Unlock()
 		ts.emitEvent(SessionEvent{
-			Type: "error",
-			Data: err,
+			Type:      "error",
+			Data:      err,
 			Timestamp: time.Now(),
 		})
 		return
