@@ -251,15 +251,13 @@ func (p *Player) PlayNext() {
 	// 根据播放模式计算下一曲
 	switch playbackMode {
 	case models.PlaybackModeOrder:
-		// 顺序播放：播到最后一首后停止
+		// 顺序播放：播到最后一首后循环到第一首
 		if currentIndex < 0 || currentIndex >= len(items)-1 {
-			// 已经是最后一首，不自动播放下一首
-			p.mu.Lock()
-			p.currentIndex = currentIndex
-			p.mu.Unlock()
-			return
+			// 已经是最后一首，循环到第一首
+			currentIndex = 0
+		} else {
+			currentIndex++
 		}
-		currentIndex++
 	case models.PlaybackModeRandom:
 		// 随机播放：在整个列表中随机选择
 		currentIndex = rand.Intn(len(items))
@@ -300,15 +298,13 @@ func (p *Player) PlayPrevious() {
 	// 根据播放模式计算上一曲
 	switch playbackMode {
 	case models.PlaybackModeOrder:
-		// 顺序播放：播到第一首后停止
+		// 顺序播放：播到第一首后循环到最后一首
 		if currentIndex <= 0 {
-			// 已经是第一首，不自动播放上一首
-			p.mu.Lock()
-			p.currentIndex = currentIndex
-			p.mu.Unlock()
-			return
+			// 已经是第一首，循环到最后一首
+			currentIndex = len(items) - 1
+		} else {
+			currentIndex--
 		}
-		currentIndex--
 	case models.PlaybackModeRandom:
 		// 随机播放：在整个列表中随机选择
 		currentIndex = rand.Intn(len(items))
