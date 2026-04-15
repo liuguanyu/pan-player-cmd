@@ -89,6 +89,10 @@ type App struct {
 	lyricSearchKeyword string
 	// 歌词搜索词光标位置
 	lyricSearchCursor int
+
+	// 消息显示状态
+	currentMessage string
+	messageTimeout time.Time
 }
 
 // LyricSearchUI 歌词搜索UI状态
@@ -655,6 +659,13 @@ func (a *App) renderPlayerView() string {
 		b.WriteString(lyricsView)
 		b.WriteString("\n")
 	}
+
+		// 消息显示（在快捷键上方）
+		if a.currentMessage != "" && time.Now().Before(a.messageTimeout) {
+			messageStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#06BF54")).Bold(true).Padding(0, 2)
+			b.WriteString(messageStyle.Render(a.currentMessage))
+			b.WriteString("\n\n")
+		}
 
 	// 播放控制提示
 	b.WriteString("\n")

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -155,7 +156,7 @@ func (a *App) handleLyricSearchViewKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		default:
 			// 处理字符输入
 			for _, r := range msg.Runes {
-				if r >= 32 && r <= 126 { // 可打印ASCII字符
+				if r >= 32 && r != 127 { // 允许所有Unicode字符（包括中文），只排除控制字符
 					a.lyricSearchKeyword = a.lyricSearchKeyword[:a.lyricSearchCursor] + string(r) + a.lyricSearchKeyword[a.lyricSearchCursor:]
 					a.lyricSearchCursor++
 				}
@@ -221,6 +222,14 @@ func (a *App) handleLyricSearchViewKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		a.lyricSearchUI.Editing = false
 		a.lyricSearchKeyword = ""
 		a.lyricSearchCursor = 0
+		return a, nil
+
+	case "backspace":
+		// 在非编辑模式下也允许退格键删除搜索词
+		if a.lyricSearchKeyword != "" {
+			a.lyricSearchKeyword = a.lyricSearchKeyword[:len(a.lyricSearchKeyword)-1]
+			a.lyricSearchCursor = len(a.lyricSearchKeyword)
+		}
 		return a, nil
 	}
 
@@ -408,9 +417,9 @@ func extractSongName(filename string) string {
 	return name
 }
 
-// showMessage 显示消息（简化版本）
+// showMessage 显示消息
 func (a *App) showMessage(msg string) {
-	// 在实际实现中，这里可以更新一个消息显示状态
-	// 为简化实现，这里只是打印到控制台
-	fmt.Printf("\n[消息] %s\n", msg)
+	// 更新消息状态，将在UI上显示
+	a.currentMessage = msg
+	a.messageTimeout = time.Now().Add(3 * time.Second)
 }
