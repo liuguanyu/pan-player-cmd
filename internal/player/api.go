@@ -2,6 +2,8 @@ package player
 
 import (
 	"context"
+	cryptorand "crypto/rand"
+	"math/big"
 	"math/rand"
 	"sync"
 	"time"
@@ -28,6 +30,10 @@ type Player struct {
 	loadingCancel   context.CancelFunc         // 用于取消正在进行的加载
 	loadingMu       sync.Mutex                 // 保护 loadingCancel
 	onTrackPlay     func(*models.PlaylistItem) // 歌曲开始播放时的回调函数
+
+	// 随机播放相关
+	shuffledIndices []int // 洗牌后的索引序列
+	shufflePosition int   // 当前在洗牌序列中的位置
 }
 
 // PlayerConfig 播放器配置
@@ -259,8 +265,8 @@ func (p *Player) PlayNext() {
 			currentIndex++
 		}
 	case models.PlaybackModeRandom:
-		// 随机播放：在整个列表中随机选择
-		currentIndex = rand.Intn(len(items))
+		// 随机播放：使用稳定的洗牌算法
+		currentIndex = p.getShuffleNext()
 	case models.PlaybackModeSingle:
 		// 单曲循环：重新播放当前曲目
 		if currentIndex < 0 || currentIndex >= len(items) {
@@ -306,8 +312,8 @@ func (p *Player) PlayPrevious() {
 			currentIndex--
 		}
 	case models.PlaybackModeRandom:
-		// 随机播放：在整个列表中随机选择
-		currentIndex = rand.Intn(len(items))
+		// 随机播放：使用稳定的洗牌算法
+		currentIndex = p.getShufflePrevious()
 	case models.PlaybackModeSingle:
 		// 单曲循环：重新播放当前曲目
 		if currentIndex < 0 || currentIndex >= len(items) {
@@ -364,6 +370,9 @@ func (p *Player) SetCurrentPlaylist(name string, items []*models.PlaylistItem) {
 		Items: items,
 	}
 	p.currentIndex = -1
+	// 重置洗牌序列
+	p.shuffledIndices = nil
+	p.shufflePosition = 0
 	p.mu.Unlock()
 
 	// 更新播放状态中的播放列表名称
@@ -374,7 +383,14 @@ func (p *Player) SetCurrentPlaylist(name string, items []*models.PlaylistItem) {
 // SetPlayMode 设置播放模式
 func (p *Player) SetPlayMode(mode models.PlaybackMode) {
 	state := p.manager.GetState()
+	oldMode := state.PlaybackMode
 	state.PlaybackMode = mode
+
+	// 如果切换到随机播放模式，重新生成洗牌序列
+	if mode == models.PlaybackModeRandom && oldMode != mode {
+		p.generateShuffleOrder()
+		utils.GetLogger().Info("切换到随机播放模式，重新生成洗牌序列")
+	}
 }
 
 // GetCurrentIndex 获取当前播放索引
@@ -390,3 +406,103 @@ func (p *Player) SetCurrentIndex(index int) {
 	p.currentIndex = index
 	p.mu.Unlock()
 }
+
+// generateShuffleOrder 使用 Fisher-Yates 洗牌算法 + 密码学安全随机数生成器生成随机播放序列
+// 确保每首歌在一个周期内恰好播放一次
+func (p *Player) generateShuffleOrder() {
+	if p.currentPlaylist == nil || len(p.currentPlaylist.Items) == 0 {
+		return
+	}
+
+	size := len(p.currentPlaylist.Items)
+	p.shuffledIndices = make([]int, size)
+	for i := 0; i < size; i++ {
+		p.shuffledIndices[i] = i
+	}
+
+	// Fisher-Yates 洗牌算法
+	for i := size - 1; i > 0; i-- {
+		// 使用密码学安全的随机数生成器
+		n, err := cryptorand.Int(cryptorand.Reader, big.NewInt(int64(i+1)))
+		if err != nil {
+			// 如果密码学随机数生成失败，回退到普通随机数
+			utils.GetLogger().Warn("密码学随机数生成失败，回退到普通随机数: %v", err)
+			j := rand.Intn(i + 1)
+			p.shuffledIndices[i], p.shuffledIndices[j] = p.shuffledIndices[j], p.shuffledIndices[i]
+		} else {
+			j := int(n.Int64())
+			p.shuffledIndices[i], p.shuffledIndices[j] = p.shuffledIndices[j], p.shuffledIndices[i]
+		}
+	}
+
+	// 将当前正在播放的歌曲放到洗牌序列的第一个位置
+	if p.currentIndex >= 0 && p.currentIndex < size {
+		currentIndexInShuffle := -1
+		for i, idx := range p.shuffledIndices {
+			if idx == p.currentIndex {
+				currentIndexInShuffle = i
+				break
+			}
+		}
+		if currentIndexInShuffle > 0 {
+			p.shuffledIndices[0], p.shuffledIndices[currentIndexInShuffle] = p.shuffledIndices[currentIndexInShuffle], p.shuffledIndices[0]
+		}
+	}
+	p.shufflePosition = 0
+
+	utils.GetLogger().Info("生成洗牌序列，共 %d 首歌曲，当前位置: %d", size, p.shufflePosition)
+}
+
+// getShuffleNext 获取随机播放的下一首歌曲索引
+func (p *Player) getShuffleNext() int {
+	if p.currentPlaylist == nil || len(p.currentPlaylist.Items) == 0 {
+		return 0
+	}
+
+	// 如果洗牌序列为空或长度不匹配，重新生成
+	if p.shuffledIndices == nil || len(p.shuffledIndices) != len(p.currentPlaylist.Items) {
+		p.generateShuffleOrder()
+	}
+
+	p.shufflePosition++
+
+	// 如果播完一轮，重新洗牌
+	if p.shufflePosition >= len(p.shuffledIndices) {
+		// 记录最后一首歌曲
+		lastPlayed := p.shuffledIndices[len(p.shuffledIndices)-1]
+
+		// 重新洗牌
+		p.generateShuffleOrder()
+
+		// 避免首尾衔接重复：如果新洗牌序列的第一首是上一轮的最后一首，则交换
+		if len(p.shuffledIndices) > 1 && p.shuffledIndices[0] == lastPlayed {
+			// 随机选择一个位置（除了第一个位置）进行交换
+			swapPos := 1 + rand.Intn(len(p.shuffledIndices)-1)
+			p.shuffledIndices[0], p.shuffledIndices[swapPos] = p.shuffledIndices[swapPos], p.shuffledIndices[0]
+		}
+
+		p.shufflePosition = 0
+	}
+
+	return p.shuffledIndices[p.shufflePosition]
+}
+
+// getShufflePrevious 获取随机播放的上一首歌曲索引
+func (p *Player) getShufflePrevious() int {
+	if p.currentPlaylist == nil || len(p.currentPlaylist.Items) == 0 {
+		return 0
+	}
+
+	// 如果洗牌序列为空或长度不匹配，重新生成
+	if p.shuffledIndices == nil || len(p.shuffledIndices) != len(p.currentPlaylist.Items) {
+		p.generateShuffleOrder()
+	}
+
+	// 如果已经是洗牌序列的第一首，则不变
+	if p.shufflePosition > 0 {
+		p.shufflePosition--
+	}
+
+	return p.shuffledIndices[p.shufflePosition]
+}
+
