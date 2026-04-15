@@ -215,6 +215,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ForceRenderMsg:
 		// 强制重新渲染
 		a.version++
+
+		// 检查歌曲是否切换（从后台恢复时）
+		if a.currentView == ViewPlayer {
+			state := a.player.GetState()
+			if state.CurrentSong != nil && state.CurrentSong.FsID != a.lastTrackFsID {
+				// 歌曲已切换，更新跟踪ID并加载新歌词
+				a.lastTrackFsID = state.CurrentSong.FsID
+				go a.loadLyricsForTrack(state.CurrentSong)
+			}
+		}
+
 		return a, nil
 
 	case PlayerUpdateMsg:
