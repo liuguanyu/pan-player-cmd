@@ -345,17 +345,23 @@ func (a *App) handleLyricUpload() {
 	lrcPath := audioPath[:len(audioPath)-len(ext)] + ".lrc"
 
 	// 检查是否已存在
-	go func() {
-		exists, err := a.api.CheckLRCFileExists(context.Background(), audioPath)
-		if err == nil && exists != nil {
-			// 提示用户是否覆盖
-			a.showMessage("歌词文件已存在，是否覆盖？")
-			// 这里简化处理，直接覆盖
-		}
+	exists, err := a.api.CheckLRCFileExists(context.Background(), audioPath)
+	if err != nil {
+		a.showMessage("检查歌词文件失败: " + err.Error())
+		return
+	}
 
-		// 上传歌词
-		a.uploadLyricsToBaidu(lrcPath, state.LyricsRaw)
-	}()
+	if exists != nil {
+		// 文件已存在，需要用户确认
+		a.showMessage("歌词文件已存在，按 'y' 确认覆盖，按 'c' 取消")
+		a.awaitingLyricUploadConfirm = true
+		a.uploadTargetPath = lrcPath
+		a.uploadLyricsContent = state.LyricsRaw
+		return
+	}
+
+	// 文件不存在，直接上传
+	a.uploadLyricsToBaidu(lrcPath, state.LyricsRaw)
 }
 
 // uploadLyricsToBaidu 上传歌词到百度网盘

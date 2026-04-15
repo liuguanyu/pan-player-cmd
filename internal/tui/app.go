@@ -93,6 +93,11 @@ type App struct {
 	// 消息显示状态
 	currentMessage string
 	messageTimeout time.Time
+
+	// 歌词上传确认
+	awaitingLyricUploadConfirm bool
+	uploadTargetPath           string
+	uploadLyricsContent        string
 }
 
 // LyricSearchUI 歌词搜索UI状态
@@ -1585,6 +1590,26 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if a.currentView == ViewPlayer {
 			// 上传歌词到百度网盘
 			a.handleLyricUpload()
+		}
+		return a, nil
+
+	case "y":
+		if a.currentView == ViewPlayer && a.awaitingLyricUploadConfirm {
+			// 用户确认覆盖歌词文件
+			a.awaitingLyricUploadConfirm = false
+			a.uploadLyricsToBaidu(a.uploadTargetPath, a.uploadLyricsContent)
+			a.uploadTargetPath = ""
+			a.uploadLyricsContent = ""
+		}
+		return a, nil
+
+	case "c":
+		if a.currentView == ViewPlayer && a.awaitingLyricUploadConfirm {
+			// 用户取消上传
+			a.awaitingLyricUploadConfirm = false
+			a.uploadTargetPath = ""
+			a.uploadLyricsContent = ""
+			a.showMessage("已取消上传")
 		}
 		return a, nil
 
