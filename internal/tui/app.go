@@ -1731,9 +1731,12 @@ func (a *App) handleRenameKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case "backspace":
-		// 删除最后一个字符
+		// 删除最后一个字符（正确处理中文等多字节字符）
 		if len(a.inputBuffer) > 0 {
-			a.inputBuffer = a.inputBuffer[:len(a.inputBuffer)-1]
+			runes := []rune(a.inputBuffer)
+			if len(runes) > 0 {
+				a.inputBuffer = string(runes[:len(runes)-1])
+			}
 		}
 		return a, nil
 
@@ -1996,9 +1999,12 @@ func (a *App) handleInputKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case "backspace":
-		// 删除最后一个字符
+		// 删除最后一个字符（正确处理中文等多字节字符）
 		if len(a.inputBuffer) > 0 {
-			a.inputBuffer = a.inputBuffer[:len(a.inputBuffer)-1]
+			runes := []rune(a.inputBuffer)
+			if len(runes) > 0 {
+				a.inputBuffer = string(runes[:len(runes)-1])
+			}
 		}
 		a.version++
 		return a, func() tea.Msg {

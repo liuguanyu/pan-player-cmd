@@ -46,18 +46,18 @@ func (a *App) renderLyricSearchView() string {
 		Background(lipgloss.Color("#333")).
 		Padding(0, 2)
 
-	// 显示搜索词，带光标
-	keyword := a.lyricSearchKeyword
+	// 显示搜索词，带光标（基于字符索引）
+	runes := []rune(a.lyricSearchKeyword)
 	cursor := a.lyricSearchCursor
 	if cursor < 0 {
 		cursor = 0
 	}
-	if cursor > len(keyword) {
-		cursor = len(keyword)
+	if cursor > len(runes) {
+		cursor = len(runes)
 	}
 
 	// 构建带光标的搜索词显示
-	displayKeyword := keyword[:cursor] + "█" + keyword[cursor:]
+	displayKeyword := string(runes[:cursor]) + "█" + string(runes[cursor:])
 	b.WriteString(inputStyle.Render("搜索词: " + displayKeyword))
 	b.WriteString("\n\n")
 
@@ -133,31 +133,47 @@ func (a *App) handleLyricSearchViewKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 			}
 			return a, nil
 		case "left":
+			// 光标左移（基于字符索引）
 			if a.lyricSearchCursor > 0 {
 				a.lyricSearchCursor--
 			}
 			return a, nil
 		case "right":
-			if a.lyricSearchCursor < len(a.lyricSearchKeyword) {
+			// 光标右移（基于字符索引）
+			runes := []rune(a.lyricSearchKeyword)
+			if a.lyricSearchCursor < len(runes) {
 				a.lyricSearchCursor++
 			}
 			return a, nil
 		case "backspace":
+			// 删除光标前的字符（基于字符索引）
 			if a.lyricSearchCursor > 0 {
-				a.lyricSearchKeyword = a.lyricSearchKeyword[:a.lyricSearchCursor-1] + a.lyricSearchKeyword[a.lyricSearchCursor:]
+				runes := []rune(a.lyricSearchKeyword)
+				// 删除光标前的字符
+				newRunes := append(runes[:a.lyricSearchCursor-1], runes[a.lyricSearchCursor:]...)
+				a.lyricSearchKeyword = string(newRunes)
 				a.lyricSearchCursor--
 			}
 			return a, nil
 		case "delete":
-			if a.lyricSearchCursor < len(a.lyricSearchKeyword) {
-				a.lyricSearchKeyword = a.lyricSearchKeyword[:a.lyricSearchCursor] + a.lyricSearchKeyword[a.lyricSearchCursor+1:]
+			// 删除光标后的字符（基于字符索引）
+			runes := []rune(a.lyricSearchKeyword)
+			if a.lyricSearchCursor < len(runes) {
+				newRunes := append(runes[:a.lyricSearchCursor], runes[a.lyricSearchCursor+1:]...)
+				a.lyricSearchKeyword = string(newRunes)
 			}
 			return a, nil
 		default:
-			// 处理字符输入
+			// 处理字符输入（基于字符索引）
 			for _, r := range msg.Runes {
 				if r >= 32 && r != 127 { // 允许所有Unicode字符（包括中文），只排除控制字符
-					a.lyricSearchKeyword = a.lyricSearchKeyword[:a.lyricSearchCursor] + string(r) + a.lyricSearchKeyword[a.lyricSearchCursor:]
+					runes := []rune(a.lyricSearchKeyword)
+					// 在光标位置插入字符
+					newRunes := make([]rune, len(runes)+1)
+					copy(newRunes, runes[:a.lyricSearchCursor])
+					newRunes[a.lyricSearchCursor] = r
+					copy(newRunes[a.lyricSearchCursor+1:], runes[a.lyricSearchCursor:])
+					a.lyricSearchKeyword = string(newRunes)
 					a.lyricSearchCursor++
 				}
 			}
@@ -177,7 +193,8 @@ func (a *App) handleLyricSearchViewKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 				a.lyricSearchKeyword = extractSongName(state.CurrentSong.ServerFileName)
 			}
 		}
-		a.lyricSearchCursor = len(a.lyricSearchKeyword)
+		// 初始化光标位置为字符数量
+		a.lyricSearchCursor = len([]rune(a.lyricSearchKeyword))
 		return a, nil
 
 	case "up":
@@ -210,7 +227,8 @@ func (a *App) handleLyricSearchViewKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 					a.lyricSearchKeyword = extractSongName(state.CurrentSong.ServerFileName)
 				}
 			}
-			a.lyricSearchCursor = len(a.lyricSearchKeyword)
+			// 正确设置光标位置（处理中文等多字节字符）
+			a.lyricSearchCursor = len([]rune(a.lyricSearchKeyword))
 		}
 		return a, nil
 
@@ -225,10 +243,14 @@ func (a *App) handleLyricSearchViewKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		return a, nil
 
 	case "backspace":
-		// 在非编辑模式下也允许退格键删除搜索词
+		// 在非编辑模式下也允许退格键删除搜索词（正确处理中文等多字节字符）
 		if a.lyricSearchKeyword != "" {
-			a.lyricSearchKeyword = a.lyricSearchKeyword[:len(a.lyricSearchKeyword)-1]
-			a.lyricSearchCursor = len(a.lyricSearchKeyword)
+			runes := []rune(a.lyricSearchKeyword)
+			if len(runes) > 0 {
+				a.lyricSearchKeyword = string(runes[:len(runes)-1])
+			}
+			// 正确设置光标位置（处理中文等多字节字符）
+			a.lyricSearchCursor = len([]rune(a.lyricSearchKeyword))
 		}
 		return a, nil
 	}
@@ -248,7 +270,8 @@ func (a *App) handleLyricSearch() tea.Cmd {
 		a.lyricSearchKeyword = extractSongName(state.CurrentSong.ServerFileName)
 		// 初次进入时自动进入编辑模式
 		a.lyricSearchUI.Editing = true
-		a.lyricSearchCursor = len(a.lyricSearchKeyword)
+		// 正确设置光标位置（处理中文等多字节字符）
+		a.lyricSearchCursor = len([]rune(a.lyricSearchKeyword))
 	}
 
 	// 获取日志记录器
