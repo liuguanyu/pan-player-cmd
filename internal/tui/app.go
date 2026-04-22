@@ -1538,17 +1538,31 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						} else {
 							// 歌曲不在列表中，从头开始播放
 							go func() {
-								a.player.SetCurrentIndex(0)
-								a.player.LoadTrack(context.Background(), selectedPlaylist.Items[0])
-								a.loadLyricsForTrack(selectedPlaylist.Items[0])
+								state := a.player.GetState()
+								var startIndex int
+								if state.PlaybackMode == models.PlaybackModeRandom {
+									startIndex = a.player.GetShuffleStartIndex()
+								} else {
+									startIndex = 0
+								}
+								a.player.SetCurrentIndex(startIndex)
+								a.player.LoadTrack(context.Background(), selectedPlaylist.Items[startIndex])
+								a.loadLyricsForTrack(selectedPlaylist.Items[startIndex])
 							}()
 						}
 					} else {
 						// 没有保存的状态，从头开始播放
 						go func() {
-							a.player.SetCurrentIndex(0)
-							a.player.LoadTrack(context.Background(), selectedPlaylist.Items[0])
-							a.loadLyricsForTrack(selectedPlaylist.Items[0])
+							state := a.player.GetState()
+							var startIndex int
+							if state.PlaybackMode == models.PlaybackModeRandom {
+								startIndex = a.player.GetShuffleStartIndex()
+							} else {
+								startIndex = 0
+							}
+							a.player.SetCurrentIndex(startIndex)
+							a.player.LoadTrack(context.Background(), selectedPlaylist.Items[startIndex])
+							a.loadLyricsForTrack(selectedPlaylist.Items[startIndex])
 						}()
 					}
 				}

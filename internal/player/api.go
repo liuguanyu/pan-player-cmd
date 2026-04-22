@@ -373,6 +373,14 @@ func (p *Player) SetCurrentPlaylist(name string, items []*models.PlaylistItem) {
 	// 重置洗牌序列
 	p.shuffledIndices = nil
 	p.shufflePosition = 0
+
+	// 如果是随机播放模式，先生成洗牌顺序
+	playbackMode := p.manager.GetState().PlaybackMode
+	if playbackMode == models.PlaybackModeRandom {
+		p.mu.Unlock()
+		p.generateShuffleOrder()
+		p.mu.Lock()
+	}
 	p.mu.Unlock()
 
 	// 更新播放状态中的播放列表名称
@@ -398,6 +406,20 @@ func (p *Player) GetCurrentIndex() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.currentIndex
+}
+
+// GetShuffleStartIndex 获取随机播放的起始索引
+// 用于在随机模式下开始播放时，从洗牌序列中获取一个随机位置
+func (p *Player) GetShuffleStartIndex() int {
+	if p.currentPlaylist == nil || len(p.currentPlaylist.Items) == 0 {
+		return 0
+	}
+	if p.shuffledIndices == nil || len(p.shuffledIndices) != len(p.currentPlaylist.Items) {
+		p.generateShuffleOrder()
+	}
+	// 随机选择洗牌序列中的一个位置作为起始
+	startPos := rand.Intn(len(p.shuffledIndices))
+	return p.shuffledIndices[startPos]
 }
 
 // SetCurrentIndex 设置当前播放索引
