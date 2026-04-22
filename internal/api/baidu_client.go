@@ -282,19 +282,43 @@ func (c *BaiduPanClient) DownloadFile(ctx context.Context, dlink string, writer 
 
 // CheckLRCFileExists 检查同目录下是否存在 LRC 歌词文件
 func (c *BaiduPanClient) CheckLRCFileExists(ctx context.Context, audioPath string) (*FileInfo, error) {
-	// 获取音频文件所在目录
-	dir := filepath.Dir(audioPath)
-	baseName := filepath.Base(audioPath)
+	// 提取目录和文件名（使用字符串操作，避免Windows上filepath.Dir的路径转换问题）
+	// 百度网盘路径格式: /目录/子目录/文件名.mp3
+
+	// 统一转换为Unix风格路径
+	unixPath := strings.ReplaceAll(audioPath, "\\", "/")
+
+	// 移除末尾的斜杠（如果有）
+	unixPath = strings.TrimRight(unixPath, "/")
+
+	// 提取目录路径：找到最后一个 / 之前的部分
+	lastSlash := strings.LastIndex(unixPath, "/")
+	var dir string
+	if lastSlash > 0 {
+		dir = unixPath[:lastSlash]
+	} else {
+		dir = "/"
+	}
+
+	// 提取文件名
+	baseName := ""
+	if lastSlash >= 0 && lastSlash < len(unixPath) {
+		baseName = unixPath[lastSlash+1:]
+	} else {
+		baseName = unixPath
+	}
 
 	// 移除音频文件扩展名
 	ext := filepath.Ext(baseName)
-	nameWithoutExt := strings.TrimSuffix(baseName, ext)
+	if ext != "" {
+		baseName = strings.TrimSuffix(baseName, ext)
+	}
 
 	// 可能的 LRC 文件名（大小写不敏感）
 	possibleNames := []string{
-		nameWithoutExt + ".lrc",
-		nameWithoutExt + ".LRC",
-		nameWithoutExt + ".Lrc",
+		baseName + ".lrc",
+		baseName + ".LRC",
+		baseName + ".Lrc",
 	}
 
 	// 获取目录文件列表
