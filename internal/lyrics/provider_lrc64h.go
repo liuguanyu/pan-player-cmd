@@ -138,28 +138,92 @@ func (p *LRC64HProvider) GetLyric(ctx context.Context, id string) (string, error
 		return "", fmt.Errorf("get lyric request failed: %w", err)
 	}
 
+	body := string(resp.Body())
+
 	// 3. 解析HTML
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(resp.Body())))
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(body))
 	if err != nil {
 		return "", fmt.Errorf("parse HTML failed: %w", err)
 	}
 
 	// 4. 提取歌词内容
 	var lrcLines []string
-
-	doc.Find(".lyrics-container .lyrics-text .line").Each(func(i int, s *goquery.Selection) {
-		line := strings.TrimSpace(s.Text())
-		if line != "" {
-			lrcLines = append(lrcLines, line)
-		}
-	})
-
-	if len(lrcLines) == 0 {
-		return "", fmt.Errorf("no lyrics found on detail page")
+	selectors := []string{
+		".lyrics-container .lyrics-text .line",
+		".lyrics-container .lyrics-content .line",
+		".lyrics-content .line",
+		".lyrics-scroll-area .line",
+		".lyrics-text .line",
+		".line",
 	}
 
-	// 5. 拼接成完整的LRC格式
-	return strings.Join(lrcLines, "\n"), nil
+	for _, selector := range selectors {
+		doc.Find(selector).Each(func(i int, s *goquery.Selection) {
+			line := strings.TrimSpace(s.Text())
+			if line != "" {
+				lrcLines = append(lrcLines, line)
+			}
+		})
+		if len(lrcLines) > 0 {
+			break
+		}
+	}
+
+	if len(lrcLines) > 0 {
+		return strings.Join(lrcLines, "\n"), nil
+	}
+
+	// 5. 回退：从脚本/textarea中提取歌词，兼容页面模板调整
+	reList := []*regexp.Regexp{
+		regexp.MustCompile(`(?s)lyrics?\s*[:=]\s*["'](.+?)["']`),
+		regexp.MustCompile(`(?s)lrc\s*[:=]\s*["'](.+?)["']`),
+		regexp.MustCompile(`(?s)<textarea[^>]*>(.*?)</textarea>`),
+	}
+	for _, re := range reList {
+		matches := re.FindStringSubmatch(body)
+		if len(matches) < 2 {
+			continue
+		}
+		candidate := htmlUnescapeLyrics(matches[1])
+		candidate = normalizeLyricText(candidate)
+		if candidate != "" {
+			return candidate, nil
+		}
+	}
+
+	return "", fmt.Errorf("no lyrics found on detail page")
+}
+
+func htmlUnescapeLyrics(s string) string {
+	replacer := strings.NewReplacer(
+		`\\n`, "\n",
+		`\\r`, "\r",
+		`\\t`, "\t",
+		`\"`, `"`,
+		`\'`, "'",
+		"<br>", "\n",
+		"<br/>", "\n",
+		"<br />", "\n",
+		"&#10;", "\n",
+		"&#13;", "\r",
+		"&quot;", `"`,
+		"&#39;", "'",
+		"&amp;", "&",
+	)
+	return replacer.Replace(s)
+}
+
+func normalizeLyricText(s string) string {
+	s = strings.TrimSpace(s)
+	lines := strings.Split(s, "\n")
+	cleaned := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+		if line != "" {
+			cleaned = append(cleaned, line)
+		}
+	}
+	return strings.Join(cleaned, "\n")
 }
 
 // extractIDFromURL 从URL中提取ID

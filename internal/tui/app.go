@@ -134,12 +134,12 @@ func NewApp(cfg *config.Config) *App {
 	plManager := playlist.NewManager(cfg.App.DataDir)
 
 	app := &App{
-		config:         cfg,
-		api:            apiClient,
-		player:         pl,
-		playlist:       plManager,
-		currentView:    ViewLogin, // 直接进入登录界面
-		lyricsManager:  lyrics.NewManager(),
+		config:        cfg,
+		api:           apiClient,
+		player:        pl,
+		playlist:      plManager,
+		currentView:   ViewLogin, // 直接进入登录界面
+		lyricsManager: lyrics.NewManager(),
 	}
 
 	// 设置歌曲播放回调，用于更新最近播放记录
@@ -191,7 +191,53 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			interval = time.Duration(msg.DeviceAuth.Interval) * time.Second
 		}
 		return a, a.startPolling(msg.DeviceAuth.DeviceCode, interval)
-	
+
+	case lyricSearchDoneMsg:
+		if msg.err != nil {
+			utils.GetLogger().Error("歌词搜索失败: %v", msg.err)
+			a.lyricSearchUI.Results = nil
+		} else if len(msg.results) == 0 {
+			utils.GetLogger().Info("未找到歌词: %s", msg.keyword)
+			a.lyricSearchUI.Editing = true
+			a.lyricSearchUI.Results = nil
+		} else {
+			a.lyricSearchUI = LyricSearchUI{
+				Results:       msg.results,
+				SelectedIndex: 0,
+				Visible:       true,
+				Editing:       false,
+			}
+		}
+		// 强制重新渲染
+		a.version++
+		return a, nil
+
+	case lyricDownloadDoneMsg:
+		// 无论成功失败，都先退出搜索页，避免用户看到“按了回车没反应”
+		a.currentView = ViewPlayer
+		a.lyricSearchUI.Visible = false
+		a.lyricSearchUI.Editing = false
+
+		if msg.err != nil {
+			utils.GetLogger().Error("获取歌词失败: %v", msg.err)
+			a.version++
+			a.showMessage("下载失败: " + msg.err.Error())
+			return a, nil
+		}
+
+		// 解析并显示歌词
+		parsed := lyrics.ParseLRC(msg.lrcContent)
+		state := a.player.GetState()
+		state.LyricsRaw = msg.lrcContent
+		state.LyricsParsed = parsed.Lines
+		a.currentLyrics = parsed.Lines
+		state.ShowLyrics = true
+
+		// 强制重新渲染
+		a.version++
+		a.showMessage("歌词已加载，按 'u' 上传至网盘")
+		return a, nil
+
 	case PlaylistsLoadedMsg:
 		a.playlists = msg.Playlists
 		// 不要在这里设置 currentPlaylist，保留之前的选择
@@ -676,12 +722,12 @@ func (a *App) renderPlayerView() string {
 		b.WriteString("\n")
 	}
 
-		// 消息显示（在快捷键上方）
-		if a.currentMessage != "" && time.Now().Before(a.messageTimeout) {
-			messageStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#06BF54")).Bold(true).Padding(0, 2)
-			b.WriteString(messageStyle.Render(a.currentMessage))
-			b.WriteString("\n\n")
-		}
+	// 消息显示（在快捷键上方）
+	if a.currentMessage != "" && time.Now().Before(a.messageTimeout) {
+		messageStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#06BF54")).Bold(true).Padding(0, 2)
+		b.WriteString(messageStyle.Render(a.currentMessage))
+		b.WriteString("\n\n")
+	}
 
 	// 播放控制提示
 	b.WriteString("\n")
@@ -1490,11 +1536,11 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				// 检查是否正在播放同一个播放列表
 				currentState := a.player.GetState()
 				if currentState.IsPlaying &&
-				   currentState.CurrentSong != nil &&
-				   currentState.CurrentPlaylistName == selectedPlaylist.Name {
-				// 正在播放同一列表，直接切换视图，不中断播放
-				a.currentView = ViewPlayer
-				return a, a.startPlayerUpdateTicker()
+					currentState.CurrentSong != nil &&
+					currentState.CurrentPlaylistName == selectedPlaylist.Name {
+					// 正在播放同一列表，直接切换视图，不中断播放
+					a.currentView = ViewPlayer
+					return a, a.startPlayerUpdateTicker()
 				}
 
 				if len(selectedPlaylist.Items) > 0 {

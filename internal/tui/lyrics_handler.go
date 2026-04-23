@@ -4,16 +4,14 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
+	"path"
 	"regexp"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/liuguanyu/pan-player-cmd/internal/lyrics"
 	"github.com/liuguanyu/pan-player-cmd/internal/models"
-	"github.com/liuguanyu/pan-player-cmd/internal/utils"
 )
 
 // renderLyricSearchView 渲染歌词搜索视图
@@ -210,26 +208,23 @@ func (a *App) handleLyricSearchViewKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		return a, nil
 
 	case "enter":
-		// 如果在编辑模式，执行搜索并退出编辑模式
+		if len(a.lyricSearchUI.Results) > 0 {
+			return a, a.confirmLyricSelection()
+		}
 		if a.lyricSearchUI.Editing {
 			a.lyricSearchUI.Editing = false
 			return a, a.handleLyricSearch()
 		}
-		// 如果有结果，确认选择
-		if len(a.lyricSearchUI.Results) > 0 {
-			a.confirmLyricSelection()
-		} else {
-			// 没有结果，进入编辑模式
-			a.lyricSearchUI.Editing = true
-			if a.lyricSearchKeyword == "" {
-				state := a.player.GetState()
-				if state.CurrentSong != nil {
-					a.lyricSearchKeyword = extractSongName(state.CurrentSong.ServerFileName)
-				}
+		// 没有结果，进入编辑模式
+		a.lyricSearchUI.Editing = true
+		if a.lyricSearchKeyword == "" {
+			state := a.player.GetState()
+			if state.CurrentSong != nil {
+				a.lyricSearchKeyword = extractSongName(state.CurrentSong.ServerFileName)
 			}
-			// 正确设置光标位置（处理中文等多字节字符）
-			a.lyricSearchCursor = len([]rune(a.lyricSearchKeyword))
 		}
+		// 正确设置光标位置（处理中文等多字节字符）
+		a.lyricSearchCursor = len([]rune(a.lyricSearchKeyword))
 		return a, nil
 
 	case "esc":
@@ -258,6 +253,22 @@ func (a *App) handleLyricSearchViewKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 	return a, nil
 }
 
+// lyricSearchDoneMsg 歌词搜索完成消息
+// BubbleTea推荐通过消息机制更新UI状态，避免goroutine直接修改模型
+//
+//nolint:govet // 用于tea消息传递
+type lyricSearchDoneMsg struct {
+	keyword string
+	results []models.LyricSearchResult
+	err     error
+}
+
+// lyricDownloadDoneMsg 歌词下载完成消息
+type lyricDownloadDoneMsg struct {
+	lrcContent string
+	err        error
+}
+
 // handleLyricSearch 处理歌词搜索
 func (a *App) handleLyricSearch() tea.Cmd {
 	state := a.player.GetState()
@@ -272,32 +283,16 @@ func (a *App) handleLyricSearch() tea.Cmd {
 		a.lyricSearchUI.Editing = true
 		// 正确设置光标位置（处理中文等多字节字符）
 		a.lyricSearchCursor = len([]rune(a.lyricSearchKeyword))
+		return nil
 	}
 
-	// 获取日志记录器
-	logger := utils.GetLogger()
-
-	// 搜索歌词
-	go func() {
-		results, err := a.lyricsManager.Search(context.Background(), a.lyricSearchKeyword)
+	keyword := a.lyricSearchKeyword
+	return func() tea.Msg {
+		results, err := a.lyricsManager.Search(context.Background(), keyword)
 		if err != nil {
-			// 错误记录到日志，不在界面显示
-			logger.Error("歌词搜索失败: %v", err)
-			// 标记为无结果
-			a.lyricSearchUI.Results = nil
-			return
+			return lyricSearchDoneMsg{keyword: keyword, err: err}
 		}
 
-		if len(results) == 0 {
-			// 记录到日志
-			logger.Info("未找到歌词: %s", a.lyricSearchKeyword)
-			// 自动进入编辑模式让用户调整
-			a.lyricSearchUI.Editing = true
-			a.lyricSearchUI.Results = nil
-			return
-		}
-
-		// 转换为models.LyricSearchResult
 		modelResults := make([]models.LyricSearchResult, len(results))
 		for i, r := range results {
 			modelResults[i] = models.LyricSearchResult{
@@ -310,49 +305,30 @@ func (a *App) handleLyricSearch() tea.Cmd {
 			}
 		}
 
-		// 显示搜索结果列表
-		a.lyricSearchUI = LyricSearchUI{
-			Results:       modelResults,
-			SelectedIndex: 0,
-			Visible:       true,
-			Editing:       false,
+		return lyricSearchDoneMsg{
+			keyword: keyword,
+			results: modelResults,
+			err:     nil,
 		}
-	}()
-
-	return nil
+	}
 }
 
-// confirmLyricSelection 确认歌词选择
-func (a *App) confirmLyricSelection() {
+// confirmLyricSelection 确认歌词选择并返回异步命令
+func (a *App) confirmLyricSelection() tea.Cmd {
 	if a.lyricSearchUI.SelectedIndex >= len(a.lyricSearchUI.Results) {
-		return
+		return nil
 	}
 
 	selected := a.lyricSearchUI.Results[a.lyricSearchUI.SelectedIndex]
 
-	// 获取歌词详情
-	lrcContent, err := a.lyricsManager.GetLyric(context.Background(), selected.Source, selected.ID)
-	if err != nil {
-		a.showMessage("获取歌词失败")
-		return
+	// 异步获取歌词详情
+	return func() tea.Msg {
+		lrcContent, err := a.lyricsManager.GetLyric(context.Background(), selected.Source, selected.ID)
+		return lyricDownloadDoneMsg{
+			lrcContent: lrcContent,
+			err:        err,
+		}
 	}
-
-	// 返回播放界面
-	a.currentView = ViewPlayer
-	a.lyricSearchUI.Visible = false
-
-	// 解析并显示歌词
-	parsed := lyrics.ParseLRC(lrcContent)
-	state := a.player.GetState()
-	state.LyricsRaw = lrcContent
-	state.LyricsParsed = parsed.Lines
-	a.currentLyrics = parsed.Lines
-
-	// 显示歌词
-	state.ShowLyrics = true
-
-	// 提示用户可以上传
-	a.showMessage("歌词已加载，按 'u' 上传至网盘")
 }
 
 // handleLyricUpload 处理歌词上传
@@ -363,8 +339,9 @@ func (a *App) handleLyricUpload() {
 	}
 
 	// 构建目标路径（同名.lrc）
-	audioPath := state.CurrentSong.Path
-	ext := filepath.Ext(audioPath)
+	// 使用 path 包（而非 filepath）处理百度网盘的 Unix 风格路径，避免 Windows 路径转换问题
+	audioPath := strings.ReplaceAll(state.CurrentSong.Path, "\\", "/")
+	ext := path.Ext(audioPath)
 	lrcPath := audioPath[:len(audioPath)-len(ext)] + ".lrc"
 
 	// 检查是否已存在
@@ -430,8 +407,8 @@ func (a *App) uploadLyricsToBaidu(targetPath, lrcContent string) {
 
 // extractSongName 从文件名中提取歌曲名（去掉扩展名、前导数字和空格）
 func extractSongName(filename string) string {
-	// 去掉扩展名
-	ext := filepath.Ext(filename)
+	// 去掉扩展名（使用 path 包处理 Unix 风格路径，兼容 Windows）
+	ext := path.Ext(filename)
 	name := strings.TrimSuffix(filename, ext)
 
 	// 去掉前导数字、点、空格和破折号
