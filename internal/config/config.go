@@ -33,11 +33,12 @@ type BaiduPanConfig struct {
 }
 
 type PlayerConfig struct {
-	Volume      int    `yaml:"volume"`    // 0-100
-	PlayMode    string `yaml:"play_mode"` // single, list, random
-	AutoPlay    bool   `yaml:"auto_play"`
-	ShowLyrics  bool   `yaml:"show_lyrics"`
-	AudioDevice string `yaml:"audio_device"`
+	Volume       int     `yaml:"volume"`    // 0-100
+	PlayMode     string  `yaml:"play_mode"` // single, list, random
+	AutoPlay     bool    `yaml:"auto_play"`
+	ShowLyrics   bool    `yaml:"show_lyrics"`
+	AudioDevice  string  `yaml:"audio_device"`
+	PlaybackRate float64 `yaml:"playback_rate"` // 播放倍速，如 1.0, 1.5, 2.0
 }
 
 type PlaylistConfig struct {
@@ -73,11 +74,12 @@ func DefaultConfig() *Config {
 			},
 		},
 		Player: PlayerConfig{
-			Volume:      70,
-			PlayMode:    "list",
-			AutoPlay:    false,
-			ShowLyrics:  true,
-			AudioDevice: "default",
+			Volume:       70,
+			PlayMode:     "list",
+			AutoPlay:     false,
+			ShowLyrics:   true,
+			AudioDevice:  "default",
+			PlaybackRate: 1.0,
 		},
 		Playlist: PlaylistConfig{
 			MaxHistory:    100,

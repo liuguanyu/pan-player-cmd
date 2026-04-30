@@ -11,12 +11,14 @@ import (
 
 // PlayerCore 是播放器的执行引擎，只负责播放控制，不处理数据加载
 type PlayerCore struct {
-	ctrl       *beep.Ctrl
-	volume     *effects.Volume
-	streamer   beep.StreamSeekCloser
-	format     beep.Format
-	isPlaying  bool
-	onTrackEnd func()
+	ctrl        *beep.Ctrl
+	volume      *effects.Volume
+	resampler   *beep.Resampler // 速度控制层，包装 volume
+	streamer    beep.StreamSeekCloser
+	format      beep.Format
+	isPlaying   bool
+	speed       float64 // 当前播放倍速
+	onTrackEnd  func()
 }
 
 // SetOnTrackEnd 设置播放结束时的回调函数
@@ -87,6 +89,29 @@ func (pc *PlayerCore) Seek(pos float64) {
 	speaker.Unlock()
 }
 
+// SetSpeed 设置播放倍速，返回是否实际发生了变更
+func (pc *PlayerCore) SetSpeed(speed float64) bool {
+	if pc.speed == speed {
+		return false
+	}
+	pc.speed = speed
+
+	// 如果 resampler 已经存在，动态改变其比率
+	// 这样不会破坏 speaker.Play() 的注册流器
+	if pc.resampler != nil {
+		// Resampler ratio = old_sample_rate / new_sample_rate
+		// ratio=2 -> 播放速度翻倍，ratio=0.5 -> 播放速度减半
+		pc.resampler.SetRatio(speed)
+	}
+
+	return true
+}
+
+// GetSpeed 获取当前倍速
+func (pc *PlayerCore) GetSpeed() float64 {
+	return pc.speed
+}
+
 // SetStream 设置新的音频流
 func (pc *PlayerCore) SetStream(streamer beep.StreamSeekCloser, format beep.Format) {
 	// 停止并清除之前的音频流
@@ -116,8 +141,12 @@ func (pc *PlayerCore) SetStream(streamer beep.StreamSeekCloser, format beep.Form
 		Silent:   false,
 	}
 
+	// 创建速度控制层 (使用Resampler实现速度调整)
+	// 质量设为4: 良好的性能和质量平衡
+	pc.resampler = beep.ResampleRatio(4, float64(pc.speed), pc.volume)
+
 	pc.ctrl = &beep.Ctrl{
-		Streamer: pc.volume,
+		Streamer: pc.resampler,
 		Paused:   true, // 初始设置为暂停状态，Play() 会取消暂停
 	}
 

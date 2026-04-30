@@ -130,6 +130,7 @@ func NewApp(cfg *config.Config) *App {
 	pl := player.NewPlayer(&player.PlayerConfig{
 		AudioDevice: cfg.Player.AudioDevice,
 		CacheDir:    cfg.App.DataDir + "/cache",
+		Speed:       cfg.Player.PlaybackRate,
 	}, apiClient)
 	plManager := playlist.NewManager(cfg.App.DataDir)
 
@@ -736,9 +737,9 @@ func (a *App) renderPlayerView() string {
 	// 动态构建快捷键提示 - 只在有歌词时显示 'u' 键
 	var shortcutString string
 	if state.ShowLyrics && len(a.currentLyrics) > 0 {
-		shortcutString = "[空格]暂停/恢复  [n]下一曲  [p]上一曲  [↑/↓]音量  [m]模式  [l]歌词  [s]搜索歌词  [u]上传歌词  [Ctrl+Z]后台挂起  [Esc]返回"
+		shortcutString = "[空格]暂停/恢复  [n]下一曲  [p]上一曲  [↑/↓]音量  [m]模式  [>]倍速  [l]歌词  [s]搜索歌词  [u]上传歌词  [Ctrl+Z]后台挂起  [Esc]返回"
 	} else {
-		shortcutString = "[空格]暂停/恢复  [n]下一曲  [p]上一曲  [↑/↓]音量  [m]模式  [l]歌词  [s]搜索歌词  [Ctrl+Z]后台挂起  [Esc]返回"
+		shortcutString = "[空格]暂停/恢复  [n]下一曲  [p]上一曲  [↑/↓]音量  [m]模式  [>]倍速  [l]歌词  [s]搜索歌词  [Ctrl+Z]后台挂起  [Esc]返回"
 	}
 	b.WriteString(controlStyle.Render(shortcutString))
 
@@ -762,8 +763,9 @@ func (a *App) renderProgressBar(state *models.PlaybackState) string {
 	var bar string
 	if duration <= 0 {
 		bar = strings.Repeat("░", 30)
-		return fmt.Sprintf("%s [%s] 00:00 / 00:00 | 音量: %d%%",
-			statusText, bar, int(state.Volume*100))
+		speedStr := formatSpeed(state.PlaybackRate)
+		return fmt.Sprintf("%s [%s] 00:00 / 00:00 | 音量: %d%% | 倍速: %s",
+			statusText, bar, int(state.Volume*100), speedStr)
 	}
 
 	// 确保百分比不超过 1
@@ -796,8 +798,9 @@ func (a *App) renderProgressBar(state *models.PlaybackState) string {
 	totalTime := formatTime(duration)
 	volume := int(state.Volume * 100)
 
-	return fmt.Sprintf("%s [%s] %s / %s | 音量: %d%%",
-		statusText, bar, currentTime, totalTime, volume)
+	speedStr := formatSpeed(state.PlaybackRate)
+	return fmt.Sprintf("%s [%s] %s / %s | 音量: %d%% | 倍速: %s",
+		statusText, bar, currentTime, totalTime, volume, speedStr)
 }
 
 // renderControls 渲染播放控制
@@ -1052,6 +1055,7 @@ func (a *App) renderHelpView() string {
 		{"l", "显示/隐藏歌词"},
 		{"s", "搜索歌词"},
 		{"u", "上传歌词到网盘"},
+		{">", "切换播放倍速"},
 	}
 	for _, shortcut := range shortcuts {
 		b.WriteString(helpStyle.Render(fmt.Sprintf("%-10s %s", shortcut.key, shortcut.desc)))
@@ -1572,6 +1576,8 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 								a.player.SetPlayMode(a.lastPlaybackState.PlaybackMode)
 								// 恢复音量
 								a.player.SetVolume(a.lastPlaybackState.Volume)
+								// 恢复播放倍速
+								a.player.SetSpeed(a.lastPlaybackState.PlaybackRate)
 								// 恢复播放状态
 								if a.lastPlaybackState.IsPlaying {
 									a.player.Play()
@@ -1697,6 +1703,12 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				newMode = models.PlaybackModeOrder
 			}
 			a.player.SetPlayMode(newMode)
+		}
+		return a, nil
+
+	case ">":
+		if a.currentView == ViewPlayer {
+			a.cyclePlaybackSpeed()
 		}
 		return a, nil
 
@@ -2341,6 +2353,52 @@ func (a *App) addFolderFiles(folderPath string) tea.Cmd {
 }
 
 // updateRecentPlaylist 更新最近播放列表
+
+// playbackSpeeds 可选的播放倍速列表
+var playbackSpeeds = []float64{0.75, 1, 1.25, 1.5, 1.75, 2, 3, 5, 10}
+
+// cyclePlaybackSpeed 切换播放倍速
+func (a *App) cyclePlaybackSpeed() {
+	state := a.player.GetState()
+	currentSpeed := state.PlaybackRate
+
+	// 找到当前速度在列表中的位置，切换到下一个
+	idx := -1
+	for i, s := range playbackSpeeds {
+		if s == currentSpeed {
+			idx = i
+			break
+		}
+	}
+
+	var newSpeed float64
+	if idx < 0 || idx >= len(playbackSpeeds)-1 {
+		newSpeed = playbackSpeeds[0]
+	} else {
+		newSpeed = playbackSpeeds[idx+1]
+	}
+
+	a.player.SetSpeed(newSpeed)
+
+	// 保存到配置
+	a.config.Player.PlaybackRate = newSpeed
+	if err := a.config.Save(); err != nil {
+		utils.GetLogger().Error("保存播放倍速配置失败: %v", err)
+	}
+
+	// 显示倍速切换消息
+	speedStr := formatSpeed(newSpeed)
+	a.showMessage(fmt.Sprintf("播放倍速: %s", speedStr))
+}
+
+// formatSpeed 格式化播放倍速
+func formatSpeed(speed float64) string {
+	if speed == float64(int(speed)) {
+		return fmt.Sprintf("%.0fx", speed)
+	}
+	return fmt.Sprintf("%.2gx", speed)
+}
+
 func (a *App) updateRecentPlaylist(track *models.PlaylistItem) {
 	// 获取最近播放列表
 	recentPlaylist := a.playlist.GetPlaylist("最近播放")

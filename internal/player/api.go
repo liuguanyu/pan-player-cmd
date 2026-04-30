@@ -41,6 +41,7 @@ type PlayerConfig struct {
 	AudioDevice string
 	CacheDir    string
 	SampleRate  int
+	Speed       float64 // 播放倍速
 }
 
 // NewPlayer 创建新的播放器
@@ -48,9 +49,12 @@ func NewPlayer(cfg *PlayerConfig, apiClient *api.BaiduPanClient) *Player {
 	if cfg.SampleRate == 0 {
 		cfg.SampleRate = 44100
 	}
+	if cfg.Speed <= 0 {
+		cfg.Speed = 1.0
+	}
 
 	// 创建 PlayerCore 实例（只创建一次）
-	playerCore := &PlayerCore{}
+	playerCore := &PlayerCore{speed: cfg.Speed}
 
 	p := &Player{
 		apiClient: apiClient,
@@ -63,6 +67,7 @@ func NewPlayer(cfg *PlayerConfig, apiClient *api.BaiduPanClient) *Player {
 			state: &models.PlaybackState{
 				Volume:       0.6,                      // 默认音量60%
 				PlaybackMode: models.PlaybackModeOrder, // 默认顺序播放
+				PlaybackRate: cfg.Speed,                // 初始化播放倍速
 				ShowLyrics:   true,                     // 默认显示歌词
 			},
 			durationChan: make(chan float64, 10), // 初始化 durationChan
@@ -240,6 +245,24 @@ func (p *Player) SetVolume(volume float64) {
 
 	// 设置核心播放器的音量
 	p.core.SetVolume(volume)
+}
+
+// SetSpeed 设置播放倍速
+func (p *Player) SetSpeed(speed float64) {
+	// 限制速度在合理范围 [0.5, 10.0]
+	if speed < 0.5 {
+		speed = 0.5
+	}
+	if speed > 10.0 {
+		speed = 10.0
+	}
+
+	// 更新播放状态中的速度
+	state := p.manager.GetState()
+	state.PlaybackRate = speed
+
+	// 设置核心播放器的速度
+	p.core.SetSpeed(speed)
 }
 
 // PlayNext 播放下一首

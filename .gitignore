@@ -85,5 +85,8 @@ build/
 .env.production
 .env.test
 
+# Claude Code
+.claude/
+
 # User specific
 .gitignore.local
