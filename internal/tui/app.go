@@ -67,6 +67,9 @@ type App struct {
 	// 当前歌曲跟踪（用于检测歌曲切换）
 	lastTrackFsID int64
 
+	// 终端标题跟踪（记录上一次设置的标题，避免每个 tick 重复发送）
+	lastWindowTitle string
+
 	// 版本 ID 用于强制重新渲染
 	version int
 
@@ -223,7 +226,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			utils.GetLogger().Error("获取歌词失败: %v", msg.err)
 			a.version++
 			a.showMessage("下载失败: " + msg.err.Error())
-			return a, nil
+			// 回到播放界面，恢复进度轮询与终端标题
+			return a, a.resumePlayerUpdates()
 		}
 
 		// 解析并显示歌词
@@ -237,7 +241,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 强制重新渲染
 		a.version++
 		a.showMessage("歌词已加载，按 'u' 上传至网盘")
-		return a, nil
+		// 回到播放界面，恢复进度轮询与终端标题
+		return a, a.resumePlayerUpdates()
 
 	case PlaylistsLoadedMsg:
 		a.playlists = msg.Playlists
@@ -273,7 +278,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		return a, nil
+		return a, a.updateWindowTitleCmd()
 
 	case PlayerUpdateMsg:
 		// 播放器状态更新
@@ -291,7 +296,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// 继续接收更新
-			return a, a.startPlayerUpdateTicker()
+			return a, a.resumePlayerUpdates()
 		}
 		return a, nil
 
@@ -350,7 +355,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				go a.loadLyricsForTrack(state.CurrentSong)
 			}
 
-			return a, a.startPlayerUpdateTicker()
+			return a, a.resumePlayerUpdates()
 		}
 
 	case SplashAnimationDoneMsg:
@@ -1464,7 +1469,8 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if a.pollingCancel != nil {
 			a.pollingCancel()
 		}
-		return a, tea.Quit
+		// 退出前重置终端标题，恢复为终端默认
+		return a, tea.Batch(tea.Quit, a.resetWindowTitle())
 
 	case "ctrl+z":
 		// 挂起到后台（隐藏/收起 TUI，保持播放）
@@ -1500,8 +1506,9 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			a.currentView = ViewPlaylist
 			a.inputBuffer = "" // 清空输入缓冲
+			// 离开播放界面，恢复默认终端标题
 			// 重新加载播放列表以更新"最近播放"
-			return a, a.loadPlaylists()
+			return a, tea.Batch(a.loadPlaylists(), a.updateWindowTitleCmd())
 		}
 		return a, nil
 
@@ -1544,7 +1551,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					currentState.CurrentPlaylistName == selectedPlaylist.Name {
 					// 正在播放同一列表，直接切换视图，不中断播放
 					a.currentView = ViewPlayer
-					return a, a.startPlayerUpdateTicker()
+					return a, a.resumePlayerUpdates()
 				}
 
 				if len(selectedPlaylist.Items) > 0 {
@@ -1621,7 +1628,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			a.currentView = ViewPlayer
 			// 启动播放器状态更新定时器
-			return a, a.startPlayerUpdateTicker()
+			return a, a.resumePlayerUpdates()
 		}
 		return a, nil
 	case " ":
@@ -1984,6 +1991,90 @@ func (a *App) startPlayerUpdateTicker() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
 		return PlayerUpdateMsg{}
 	})
+}
+
+// resumePlayerUpdates 返回（重新）进入播放界面所需的命令：启动状态轮询定时器 + 刷新终端标题。
+//
+// 修复背景：播放器进度/流光/歌词高亮依赖 PlayerUpdateMsg 定时器链，而该链仅在
+// currentView == ViewPlayer 时才会自我续期。一旦离开播放界面（例如进入歌词搜索），
+// 下一次 PlayerUpdateMsg 命中非播放视图便返回 nil，定时器链随之断裂。若回到播放界面
+// 时忘记重启定时器，界面就会“卡住”（进度条不滚动、流光不动、歌词不跟进）。
+// 因此任何（重新）进入播放界面的路径都应通过此方法恢复实时更新。
+func (a *App) resumePlayerUpdates() tea.Cmd {
+	return tea.Batch(a.startPlayerUpdateTicker(), a.updateWindowTitleCmd())
+}
+
+// computeWindowTitle 计算当前应设置的终端标题。
+// 播放界面且存在当前高亮歌词时，标题为 "歌名 — 歌词行"；
+// 没有当前歌词行时退化为歌名；非播放界面或无歌曲时使用默认标题。
+func (a *App) computeWindowTitle() string {
+	if a.currentView != ViewPlayer {
+		return "Pan Player"
+	}
+
+	state := a.player.GetState()
+	if state.CurrentSong == nil {
+		return "Pan Player"
+	}
+
+	songName := extractSongName(state.CurrentSong.ServerFileName)
+
+	// 计算当前高亮歌词行
+	line := ""
+	if state.ShowLyrics && len(a.currentLyrics) > 0 {
+		if idx := lyrics.GetCurrentLyricIndex(a.currentLyrics, state.CurrentTime); idx >= 0 {
+			line = strings.TrimSpace(a.currentLyrics[idx].Text)
+		}
+	}
+
+	if line == "" {
+		return sanitizeTitle(songName)
+	}
+	return sanitizeTitle(songName + " — " + line)
+}
+
+// updateWindowTitleCmd 仅在标题发生变化时返回 tea.SetWindowTitle 命令，
+// 避免每个 100ms tick 都重复发送相同的标题设置指令。
+func (a *App) updateWindowTitleCmd() tea.Cmd {
+	title := a.computeWindowTitle()
+	if title == a.lastWindowTitle {
+		return nil
+	}
+	a.lastWindowTitle = title
+	return tea.SetWindowTitle(title)
+}
+
+// resetWindowTitle 重置终端标题（退出时清除标题，恢复为终端默认）
+func (a *App) resetWindowTitle() tea.Cmd {
+	a.lastWindowTitle = ""
+	return tea.SetWindowTitle("")
+}
+
+// sanitizeTitle 清理标题文本：去除换行与控制字符，并限制长度，避免破坏终端标题
+func sanitizeTitle(s string) string {
+	s = strings.TrimSpace(s)
+	var b strings.Builder
+	for _, r := range s {
+		// 仅保留可打印字符（排除控制字符 0x00-0x1F 与 0x7F），
+		// 换行/制表符替换为空格
+		switch {
+		case r == '\n' || r == '\r' || r == '\t':
+			b.WriteRune(' ')
+		case r < 0x20 || r == 0x7F:
+			// 丢弃其他控制字符
+		default:
+			b.WriteRune(r)
+		}
+	}
+	result := strings.TrimSpace(b.String())
+
+	// 限制长度（按 rune），避免过长的标题
+	const maxLen = 80
+	runes := []rune(result)
+	if len(runes) > maxLen {
+		result = string(runes[:maxLen]) + "…"
+	}
+	return result
 }
 
 // max 返回两个整数中的最大值
