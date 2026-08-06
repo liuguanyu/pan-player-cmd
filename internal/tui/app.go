@@ -1664,8 +1664,12 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "s":
 		if a.currentView == ViewPlayer {
-			// 切换到歌词搜索视图
+			// 切换到歌词搜索视图，清除旧搜索状态，让当前歌曲名自动填入
 			a.currentView = ViewLyricSearch
+			a.lyricSearchKeyword = ""
+			a.lyricSearchCursor = 0
+			a.lyricSearchUI.Results = nil
+			a.lyricSearchUI.SelectedIndex = 0
 			return a, a.handleLyricSearch()
 		}
 		return a, nil
