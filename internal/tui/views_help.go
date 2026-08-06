@@ -26,8 +26,7 @@ func (a *App) renderHelpView() string {
 		desc string
 	}{
 		{"h", "全局-显示帮助"},
-		{"q", "全局-退出程序"},
-		{"Esc", "全局-返回上一级"},
+		{"Esc", "返回上一级 / 退出程序"},
 	}
 
 	b.WriteString(titleStyle.Render("全局快捷键"))
@@ -98,7 +97,7 @@ func (a *App) renderHelpView() string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString("\n\n按 Esc 返回")
+	b.WriteString("\n\n按 Esc 返回 / 退出")
 
 	return b.String()
 }

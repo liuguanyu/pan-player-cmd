@@ -41,7 +41,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
-	case "q", "ctrl+c":
+	case "ctrl+c":
 		// 停止轮询
 		if a.pollingCancel != nil {
 			a.pollingCancel()
@@ -90,7 +90,11 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.version++
 			return a, tea.Batch(a.fullRepaintCmd(), a.loadPlaylists(), a.updateWindowTitleCmd())
 		}
-		return a, nil
+		// 在其他界面（播放列表、登录、Splash）按 Esc 退出
+		if a.pollingCancel != nil {
+			a.pollingCancel()
+		}
+		return a, tea.Batch(tea.Quit, a.resetWindowTitle())
 
 	case "up":
 		if a.currentView == ViewPlaylist && a.selectedIndex > 0 {
@@ -217,8 +221,10 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if a.currentView == ViewPlayer {
 			if a.player.IsPlaying() {
 				a.player.Pause()
+				a.sheepVis.SetAudioActive(false)
 			} else {
 				a.player.Play()
+				a.sheepVis.SetAudioActive(true)
 			}
 		}
 		return a, nil

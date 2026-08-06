@@ -25,6 +25,11 @@ type ActiveVisualizer struct {
 	// updates this from renderPlayerView so the image sits directly below lyrics.
 	renderRow int
 
+	// audioActive reflects whether the player is currently producing audio.
+	// When false (paused), the runLoop skips analysis & rendering so the
+	// visualizer freezes instead of dancing on stale ring-buffer samples.
+	audioActive bool
+
 	// Internal
 	ringBuf *RingBuffer
 	stopCh  chan struct{}
@@ -37,9 +42,10 @@ type ActiveVisualizer struct {
 func NewActiveVisualizer() *ActiveVisualizer {
 	supported, reason := SixelCapable()
 	return &ActiveVisualizer{
-		supported: supported,
-		reason:    reason,
-		visible:   true,
+		supported:   supported,
+		reason:      reason,
+		visible:     true,
+		audioActive: true,
 		clearFrame: SixelEncodeSolid(
 			DefaultViewportWidth,
 			DefaultViewportHeight,
@@ -84,6 +90,14 @@ func (v *ActiveVisualizer) SetRenderRow(row int) {
 		v.clearSixelAreaAt(v.renderRow)
 	}
 	v.renderRow = row
+}
+
+// SetAudioActive tells the visualizer whether the audio pipeline is active.
+// Call with false on pause to freeze the visualization; true on resume.
+func (v *ActiveVisualizer) SetAudioActive(active bool) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.audioActive = active
 }
 
 // SetVisible controls whether the visualization is rendered on the current page.
@@ -218,7 +232,7 @@ func (v *ActiveVisualizer) runLoop() {
 		}
 
 		v.mu.RLock()
-		active := v.enabled && v.visible
+		active := v.enabled && v.visible && v.audioActive
 		v.mu.RUnlock()
 		if !active {
 			continue
@@ -240,7 +254,7 @@ func (v *ActiveVisualizer) runLoop() {
 		// Without this, pressing v/off can clear the area while this goroutine is
 		// still encoding a frame, then the stale frame is written after the clear.
 		v.mu.Lock()
-		activeNow := v.enabled && v.visible
+		activeNow := v.enabled && v.visible && v.audioActive
 		th := v.termHeight
 		row := v.renderRow
 		if activeNow {
