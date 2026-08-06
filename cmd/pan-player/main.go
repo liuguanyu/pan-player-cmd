@@ -5,6 +5,7 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/liuguanyu/pan-player-cmd/internal/app"
 	"github.com/liuguanyu/pan-player-cmd/internal/config"
 	"github.com/liuguanyu/pan-player-cmd/internal/tui"
 )
@@ -29,9 +30,12 @@ func main() {
 	cfg.API.BaiduPan.ClientSecret = creds.ClientSecret
 	cfg.API.BaiduPan.RedirectURI = creds.RedirectURI
 
+	// 创建应用服务层
+	svc := app.NewService(cfg)
+
 	// 启动 TUI 应用（使用新架构）
-	app := tui.NewApp(cfg)
-	p := tea.NewProgram(app, tea.WithAltScreen())
+	tuiApp := tui.NewApp(svc)
+	p := tea.NewProgram(tuiApp, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		log.Fatal("Error running program:", err)
 		os.Exit(1)

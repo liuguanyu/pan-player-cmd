@@ -12,15 +12,15 @@ import (
 func (a *App) checkLogin() tea.Cmd {
 	return func() tea.Msg {
 		// 检查是否已登录
-		if err := a.api.LoadToken(); err == nil {
+		if err := a.svc.API.LoadToken(); err == nil {
 			// 已登录，获取用户信息
 			return LoginSuccessMsg{UserInfo: &models.UserInfo{BaiduName: "用户"}}
 		}
 
 		// 未登录，获取设备码
-		deviceAuth, err := a.api.GetDeviceCode(
-			a.config.API.BaiduPan.ClientID,
-			a.config.API.BaiduPan.ClientSecret,
+		deviceAuth, err := a.svc.API.GetDeviceCode(
+			a.svc.Config.API.BaiduPan.ClientID,
+			a.svc.Config.API.BaiduPan.ClientSecret,
 		)
 		if err != nil {
 			return LoginErrorMsg{Error: err.Error()}
@@ -36,10 +36,10 @@ func (a *App) startPolling(deviceCode string, interval time.Duration) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		a.pollingCancel = cancel
 
-		tokenResp, err := a.api.WaitForAuth(
+		tokenResp, err := a.svc.API.WaitForAuth(
 			ctx,
-			a.config.API.BaiduPan.ClientID,
-			a.config.API.BaiduPan.ClientSecret,
+			a.svc.Config.API.BaiduPan.ClientID,
+			a.svc.Config.API.BaiduPan.ClientSecret,
 			deviceCode,
 			interval,
 			func() {
@@ -57,7 +57,7 @@ func (a *App) startPolling(deviceCode string, interval time.Duration) tea.Cmd {
 			RefreshToken: tokenResp.RefreshToken,
 			ExpiresIn:    tokenResp.ExpiresIn,
 		}
-		if err := a.api.SaveToken(tokenInfo); err != nil {
+		if err := a.svc.API.SaveToken(tokenInfo); err != nil {
 			return LoginErrorMsg{Error: "保存令牌失败: " + err.Error()}
 		}
 

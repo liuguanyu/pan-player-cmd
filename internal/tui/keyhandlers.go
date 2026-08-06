@@ -104,7 +104,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if volume > 1 {
 				volume = 1
 			}
-			a.player.SetVolume(volume)
+			a.svc.Player.SetVolume(volume)
 		}
 		return a, nil
 
@@ -116,7 +116,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if volume < 0 {
 				volume = 0
 			}
-			a.player.SetVolume(volume)
+			a.svc.Player.SetVolume(volume)
 		}
 		return a, nil
 
@@ -141,7 +141,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 				if len(selectedPlaylist.Items) > 0 {
 					// 设置当前播放列表到 Player
-					a.player.SetCurrentPlaylist(selectedPlaylist.Name, selectedPlaylist.Items)
+					a.svc.Player.SetCurrentPlaylist(selectedPlaylist.Name, selectedPlaylist.Items)
 
 					// 检查是否有保存的播放状态（从上次退出时保存）
 					if a.lastPlaybackState.CurrentSong != nil {
@@ -157,24 +157,24 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						if targetIndex >= 0 {
 							// 恢复播放状态
 							go func() {
-								a.player.SetCurrentIndex(targetIndex)
-								a.player.LoadTrack(context.Background(), selectedPlaylist.Items[targetIndex])
+								a.svc.Player.SetCurrentIndex(targetIndex)
+								a.svc.Player.LoadTrack(context.Background(), selectedPlaylist.Items[targetIndex])
 								// 恢复播放位置
 								if a.lastPlaybackState.CurrentTime > 0 {
 									time.Sleep(200 * time.Millisecond) // 等待歌曲加载
-									a.player.Seek(a.lastPlaybackState.CurrentTime)
+									a.svc.Player.Seek(a.lastPlaybackState.CurrentTime)
 								}
 								// 恢复播放模式
-								a.player.SetPlayMode(a.lastPlaybackState.PlaybackMode)
+								a.svc.Player.SetPlayMode(a.lastPlaybackState.PlaybackMode)
 								// 恢复音量
-								a.player.SetVolume(a.lastPlaybackState.Volume)
+								a.svc.Player.SetVolume(a.lastPlaybackState.Volume)
 								// 恢复播放倍速
-								a.player.SetSpeed(a.lastPlaybackState.PlaybackRate)
+								a.svc.Player.SetSpeed(a.lastPlaybackState.PlaybackRate)
 								// 恢复播放状态
 								if a.lastPlaybackState.IsPlaying {
-									a.player.Play()
+									a.svc.Player.Play()
 								} else {
-									a.player.Pause()
+									a.svc.Player.Pause()
 								}
 								// 加载歌词
 								a.loadLyricsForTrack(selectedPlaylist.Items[targetIndex])
@@ -185,12 +185,12 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 							go func() {
 								var startIndex int
 								if state.PlaybackMode == models.PlaybackModeRandom {
-									startIndex = a.player.GetShuffleStartIndex()
+									startIndex = a.svc.Player.GetShuffleStartIndex()
 								} else {
 									startIndex = 0
 								}
-								a.player.SetCurrentIndex(startIndex)
-								a.player.LoadTrack(context.Background(), selectedPlaylist.Items[startIndex])
+								a.svc.Player.SetCurrentIndex(startIndex)
+								a.svc.Player.LoadTrack(context.Background(), selectedPlaylist.Items[startIndex])
 								a.loadLyricsForTrack(selectedPlaylist.Items[startIndex])
 							}()
 						}
@@ -200,12 +200,12 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						go func() {
 							var startIndex int
 							if state.PlaybackMode == models.PlaybackModeRandom {
-								startIndex = a.player.GetShuffleStartIndex()
+								startIndex = a.svc.Player.GetShuffleStartIndex()
 							} else {
 								startIndex = 0
 							}
-							a.player.SetCurrentIndex(startIndex)
-							a.player.LoadTrack(context.Background(), selectedPlaylist.Items[startIndex])
+							a.svc.Player.SetCurrentIndex(startIndex)
+							a.svc.Player.LoadTrack(context.Background(), selectedPlaylist.Items[startIndex])
 							a.loadLyricsForTrack(selectedPlaylist.Items[startIndex])
 						}()
 					}
@@ -219,11 +219,11 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case " ":
 		if a.currentView == ViewPlayer {
-			if a.player.IsPlaying() {
-				a.player.Pause()
+			if a.svc.Player.IsPlaying() {
+				a.svc.Player.Pause()
 				a.sheepVis.SetAudioActive(false)
 			} else {
-				a.player.Play()
+				a.svc.Player.Play()
 				a.sheepVis.SetAudioActive(true)
 			}
 		}
@@ -231,20 +231,20 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "left":
 		if a.currentView == ViewPlayer {
-			a.player.PlayPrevious()
+			a.svc.Player.PlayPrevious()
 		}
 		return a, nil
 
 	case "right":
 		if a.currentView == ViewPlayer {
-			a.player.PlayNext()
+			a.svc.Player.PlayNext()
 		}
 		return a, nil
 
 	case "l":
 		if a.currentView == ViewPlayer {
 			// Toggle lyrics visibility
-			a.player.SetShowLyrics(!a.lastSnapshot.ShowLyrics)
+			a.svc.Player.SetShowLyrics(!a.lastSnapshot.ShowLyrics)
 			// 状态更新会触发 UI 重新渲染
 		}
 		return a, nil
@@ -313,7 +313,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			default:
 				newMode = models.PlaybackModeOrder
 			}
-			a.player.SetPlayMode(newMode)
+			a.svc.Player.SetPlayMode(newMode)
 		}
 		return a, nil
 
@@ -325,14 +325,14 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "p":
 		if a.currentView == ViewPlayer {
-			a.player.PlayPrevious()
+			a.svc.Player.PlayPrevious()
 		}
 		return a, nil
 
 	case "n":
 		if a.currentView == ViewPlayer {
 			// 下一曲
-			a.player.PlayNext()
+			a.svc.Player.PlayNext()
 		} else if a.currentView == ViewPlaylist {
 			// 进入新建播放列表模式
 			a.currentView = ViewCreatePlaylist
@@ -378,11 +378,11 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				playlistName := a.playlists[a.selectedIndex].Name
 				if playlistName != "最近播放" {
 					go func() {
-						err := a.playlist.RefreshPlaylist(a.api, playlistName)
+						err := a.svc.Playlist.RefreshPlaylist(a.svc.API, playlistName)
 						if err == nil {
 							// 重新加载播放列表
-							a.playlist.LoadPlaylists()
-							a.playlists = a.playlist.GetPlaylists()
+							a.svc.Playlist.LoadPlaylists()
+							a.playlists = a.svc.Playlist.GetPlaylists()
 						}
 					}()
 				}
@@ -403,11 +403,11 @@ func (a *App) handleRenameKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if a.inputBuffer != "" && a.selectedIndex < len(a.playlists) {
 			// 重命名播放列表
 			oldName := a.playlists[a.selectedIndex].Name
-			a.playlist.RenamePlaylist(oldName, a.inputBuffer)
+			a.svc.Playlist.RenamePlaylist(oldName, a.inputBuffer)
 
 			// 重新加载播放列表
-			a.playlist.LoadPlaylists()
-			a.playlists = a.playlist.GetPlaylists()
+			a.svc.Playlist.LoadPlaylists()
+			a.playlists = a.svc.Playlist.GetPlaylists()
 		}
 		a.currentView = ViewPlaylist
 		a.inputBuffer = ""
@@ -509,9 +509,9 @@ func (a *App) handleInputKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (a *App) handleDeleteConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "y" && a.currentPlaylist != nil {
 		// 确认删除
-		a.playlist.RemovePlaylist(a.currentPlaylist.Name)
-		a.playlist.LoadPlaylists()
-		a.playlists = a.playlist.GetPlaylists()
+		a.svc.Playlist.RemovePlaylist(a.currentPlaylist.Name)
+		a.svc.Playlist.LoadPlaylists()
+		a.playlists = a.svc.Playlist.GetPlaylists()
 		if len(a.playlists) > 0 {
 			a.currentPlaylist = &a.playlists[0]
 			a.selectedIndex = 0
@@ -620,7 +620,7 @@ func (a *App) handleFileBrowserKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 		// 创建播放列表
-		err := a.playlist.CreatePlaylist(a.inputBuffer, "")
+		err := a.svc.Playlist.CreatePlaylist(a.inputBuffer, "")
 		if err == nil {
 			// 将选中的文件添加到播放列表
 			var items []*models.PlaylistItem
@@ -632,7 +632,7 @@ func (a *App) handleFileBrowserKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					Size:           file.Size,
 				})
 			}
-			a.playlist.AddToPlaylist(a.inputBuffer, items)
+			a.svc.Playlist.AddToPlaylist(a.inputBuffer, items)
 		}
 
 		// 返回播放列表视图

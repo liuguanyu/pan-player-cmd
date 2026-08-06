@@ -28,9 +28,9 @@ func (a *App) renderPlayerView() string {
 	}
 
 	// 显示播放列表内容（当前播放项附近5首）
-	playlist := a.player.GetCurrentPlaylist()
+	playlist := a.svc.Player.GetCurrentPlaylist()
 	if playlist != nil && len(playlist.Items) > 0 {
-		currentIndex := a.player.GetCurrentIndex()
+		currentIndex := a.svc.Player.GetCurrentIndex()
 		startIndex := max(0, currentIndex-2)
 		endIndex := min(len(playlist.Items), currentIndex+3)
 

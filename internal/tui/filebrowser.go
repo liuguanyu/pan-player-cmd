@@ -14,7 +14,7 @@ func (a *App) loadFiles(path string) tea.Cmd {
 	return tea.Batch(
 		a.tickLoadingAnimation(),
 		func() tea.Msg {
-			files, err := a.api.GetFileList(path, 1, 1000)
+			files, err := a.svc.API.GetFileList(path, 1, 1000)
 			if err != nil {
 				return FilesLoadedMsg{Files: nil, Path: path}
 			}
@@ -37,7 +37,7 @@ func (a *App) addFolderFiles(folderPath string) tea.Cmd {
 	return tea.Batch(
 		a.tickLoadingAnimation(),
 		func() tea.Msg {
-			files, err := a.api.GetAudioFilesRecursive(folderPath)
+			files, err := a.svc.API.GetAudioFilesRecursive(folderPath)
 			if err != nil {
 				return FolderFilesLoadedMsg{Files: nil}
 			}

@@ -7,14 +7,13 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/liuguanyu/pan-player-cmd/internal/lyrics"
-	"github.com/liuguanyu/pan-player-cmd/internal/models"
 	"github.com/liuguanyu/pan-player-cmd/internal/utils"
 )
 
 func (a *App) loadPlaylists() tea.Cmd {
 	return func() tea.Msg {
-		if err := a.playlist.LoadPlaylists(); err == nil {
-			return PlaylistsLoadedMsg{Playlists: a.playlist.GetPlaylists()}
+		if err := a.svc.Playlist.LoadPlaylists(); err == nil {
+			return PlaylistsLoadedMsg{Playlists: a.svc.Playlist.GetPlaylists()}
 		}
 		return nil
 	}
@@ -105,48 +104,15 @@ func (a *App) cyclePlaybackSpeed() {
 		newSpeed = playbackSpeeds[idx+1]
 	}
 
-	a.player.SetSpeed(newSpeed)
+	a.svc.Player.SetSpeed(newSpeed)
 
 	// 保存到配置
-	a.config.Player.PlaybackRate = newSpeed
-	if err := a.config.Save(); err != nil {
+	a.svc.Config.Player.PlaybackRate = newSpeed
+	if err := a.svc.Config.Save(); err != nil {
 		utils.GetLogger().Error("保存播放倍速配置失败: %v", err)
 	}
 
 	// 显示倍速切换消息
 	speedStr := formatSpeed(newSpeed)
 	a.showMessage(fmt.Sprintf("播放倍速: %s", speedStr))
-}
-
-func (a *App) updateRecentPlaylist(track *models.PlaylistItem) {
-	// 获取最近播放列表
-	recentPlaylist := a.playlist.GetPlaylist("最近播放")
-	if recentPlaylist == nil {
-		return
-	}
-
-	// 创建新的最近播放列表（最多保留30首）
-	var recentSongs []*models.PlaylistItem
-	if len(recentPlaylist.Items) > 0 {
-		// 将现有歌曲复制到新列表，但移除当前歌曲（如果存在）
-		for _, item := range recentPlaylist.Items {
-			if item.FsID != track.FsID {
-				recentSongs = append(recentSongs, item)
-			}
-		}
-	}
-
-	// 将新歌曲添加到最前面
-	recentSongs = append([]*models.PlaylistItem{track}, recentSongs...)
-
-	// 限制最多30首
-	if len(recentSongs) > 30 {
-		recentSongs = recentSongs[:30]
-	}
-
-	// 更新最近播放列表
-	err := a.playlist.UpdateRecentSongs(recentSongs)
-	if err != nil {
-		utils.GetLogger().Error("更新最近播放列表失败: %v", err)
-	}
 }

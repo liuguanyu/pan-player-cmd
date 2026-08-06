@@ -7,21 +7,16 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/liuguanyu/pan-player-cmd/internal/api"
-	"github.com/liuguanyu/pan-player-cmd/internal/config"
+	"github.com/liuguanyu/pan-player-cmd/internal/app"
 	"github.com/liuguanyu/pan-player-cmd/internal/lyrics"
 	"github.com/liuguanyu/pan-player-cmd/internal/models"
-	"github.com/liuguanyu/pan-player-cmd/internal/player"
-	"github.com/liuguanyu/pan-player-cmd/internal/playlist"
 	"github.com/liuguanyu/pan-player-cmd/internal/utils"
 	"github.com/liuguanyu/pan-player-cmd/internal/visualizer"
 )
 
 // App TUI 应用
 type App struct {
-	config   *config.Config
-	api      *api.BaiduPanClient
-	player   player.TuiPlayer
-	playlist *playlist.Manager
+	svc *app.Service
 
 	// UI 状态
 	currentView ViewType
@@ -84,8 +79,6 @@ type App struct {
 	snapshotSub  <-chan models.PlaybackState
 	lastSnapshot models.PlaybackState
 
-	// 歌词管理器
-	lyricsManager *lyrics.Manager
 	// 歌词搜索UI状态
 	lyricSearchUI LyricSearchUI
 	// 歌词搜索词
@@ -131,40 +124,22 @@ const (
 )
 
 // NewApp 创建新的 TUI 应用
-func NewApp(cfg *config.Config) *App {
-	apiClient := api.NewBaiduPanClient(cfg.API.BaiduPan.TokenFile)
-
+func NewApp(svc *app.Service) *App {
 	// Create visualizer (may not be supported on all terminals)
 	sheepVis := visualizer.NewActiveVisualizer()
 
-	pl := player.NewPlayer(&player.PlayerConfig{
-		AudioDevice: cfg.Player.AudioDevice,
-		CacheDir:    cfg.App.DataDir + "/cache",
-		Speed:       cfg.Player.PlaybackRate,
-	}, apiClient)
-
 	if sheepVis.IsSupported() {
-		pl.SetTapWrapper(sheepVis.CreateTap)
+		svc.Player.SetTapWrapper(sheepVis.CreateTap)
 	}
-	plManager := playlist.NewManager(cfg.App.DataDir)
 
 	app := &App{
-		config:        cfg,
-		api:           apiClient,
-		player:        pl,
-		playlist:      plManager,
-		currentView:   ViewLogin, // 直接进入登录界面
-		lyricsManager: lyrics.NewManager(),
-		sheepVis:      sheepVis,
+		svc:         svc,
+		currentView: ViewLogin, // 直接进入登录界面
+		sheepVis:    sheepVis,
 	}
 
-	// 设置歌曲播放回调，用于更新最近播放记录
-	pl.SetOnTrackPlay(func(track *models.PlaylistItem) {
-		app.updateRecentPlaylist(track)
-	})
-
 	// 订阅不可变状态快照,渲染只读 lastSnapshot,彻底移除对 GetState 共享指针的依赖
-	app.snapshotSub = pl.Subscribe()
+	app.snapshotSub = svc.Player.Subscribe()
 
 	return app
 }
@@ -250,7 +225,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// 解析并显示歌词
 		parsed := lyrics.ParseLRC(msg.lrcContent)
-		a.player.SetLyrics(msg.lrcContent, parsed.Lines, true)
+		a.svc.Player.SetLyrics(msg.lrcContent, parsed.Lines, true)
 		a.currentLyrics = parsed.Lines
 
 		// 强制重新渲染

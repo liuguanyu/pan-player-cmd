@@ -33,12 +33,12 @@ func (a *App) loadLyricsForTrack(track *models.PlaylistItem) {
 	// 重置歌词
 	a.currentLyrics = nil
 
-	if a.api == nil || track == nil {
+	if a.svc.API == nil || track == nil {
 		return
 	}
 
 	// 检查同目录下是否存在 LRC 文件
-	lrcFile, err := a.api.CheckLRCFileExists(context.Background(), track.Path)
+	lrcFile, err := a.svc.API.CheckLRCFileExists(context.Background(), track.Path)
 	if err != nil {
 		logger.Warn("检查歌词文件失败: %v", err)
 		// 不设置任何歌词，让UI不显示歌词区域
@@ -54,7 +54,7 @@ func (a *App) loadLyricsForTrack(track *models.PlaylistItem) {
 	logger.Info("找到歌词文件: %s", lrcFile.Path)
 
 	// 下载 LRC 文件内容
-	lrcContent, err := a.api.DownloadLRCContent(context.Background(), lrcFile.FsID)
+	lrcContent, err := a.svc.API.DownloadLRCContent(context.Background(), lrcFile.FsID)
 	if err != nil {
 		logger.Error("下载歌词文件失败: %v", err)
 		// 不设置任何歌词，让UI不显示歌词区域
@@ -97,7 +97,7 @@ func (a *App) handleLyricSearch() tea.Cmd {
 
 	keyword := a.lyricSearchKeyword
 	return func() tea.Msg {
-		results, err := a.lyricsManager.Search(context.Background(), keyword)
+		results, err := a.svc.Lyrics.Search(context.Background(), keyword)
 		if err != nil {
 			return lyricSearchDoneMsg{keyword: keyword, err: err}
 		}
@@ -132,7 +132,7 @@ func (a *App) confirmLyricSelection() tea.Cmd {
 
 	// 异步获取歌词详情
 	return func() tea.Msg {
-		lrcContent, err := a.lyricsManager.GetLyric(context.Background(), selected.Source, selected.ID)
+		lrcContent, err := a.svc.Lyrics.GetLyric(context.Background(), selected.Source, selected.ID)
 		return lyricDownloadDoneMsg{
 			lrcContent: lrcContent,
 			err:        err,
@@ -154,7 +154,7 @@ func (a *App) handleLyricUpload() {
 	lrcPath := audioPath[:len(audioPath)-len(ext)] + ".lrc"
 
 	// 检查是否已存在
-	exists, err := a.api.CheckLRCFileExists(context.Background(), audioPath)
+	exists, err := a.svc.API.CheckLRCFileExists(context.Background(), audioPath)
 	if err != nil {
 		a.showMessage("检查歌词文件失败: " + err.Error())
 		return
@@ -194,7 +194,7 @@ func (a *App) uploadLyricsToBaidu(targetPath, lrcContent string) {
 	}
 
 	// 上传到百度网盘
-	err = a.api.UploadFile(context.Background(), tmpFile.Name(), targetPath)
+	err = a.svc.API.UploadFile(context.Background(), tmpFile.Name(), targetPath)
 	if err != nil {
 		a.showMessage("上传失败: " + err.Error())
 		return
@@ -209,6 +209,6 @@ func (a *App) uploadLyricsToBaidu(targetPath, lrcContent string) {
 		updatedSong := *state.CurrentSong
 		updatedSong.LRCPath = targetPath
 		// 通过 setter 安全更新播放器中的当前歌曲
-		a.player.SetCurrentSong(&updatedSong)
+		a.svc.Player.SetCurrentSong(&updatedSong)
 	}
 }
