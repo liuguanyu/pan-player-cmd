@@ -195,11 +195,7 @@ func (p *Player) LoadTrack(ctx context.Context, track *models.PlaylistItem) erro
 	return nil
 }
 
-// GetState 获取播放状态（安全，无锁读取）
-func (p *Player) GetState() *models.PlaybackState {
-	return p.manager.GetState()
-}
-
+// SetOnTrackPlay 设置歌曲开始播放时的回调函数
 // Play 开始播放
 func (p *Player) Play() {
 	p.core.Play()
@@ -282,7 +278,7 @@ func (p *Player) PlayNext() {
 	p.mu.RLock()
 	currentIndex := p.currentIndex
 	items := p.currentPlaylist.Items
-	playbackMode := p.manager.GetState().PlaybackMode
+	playbackMode := p.manager.GetPlaybackMode()
 	p.mu.RUnlock()
 
 	// 根据播放模式计算下一曲
@@ -329,7 +325,7 @@ func (p *Player) PlayPrevious() {
 	p.mu.RLock()
 	currentIndex := p.currentIndex
 	items := p.currentPlaylist.Items
-	playbackMode := p.manager.GetState().PlaybackMode
+	playbackMode := p.manager.GetPlaybackMode()
 	p.mu.RUnlock()
 
 	// 根据播放模式计算上一曲
@@ -405,7 +401,7 @@ func (p *Player) SetCurrentPlaylist(name string, items []*models.PlaylistItem) {
 	p.shufflePosition = 0
 
 	// 如果是随机播放模式，先生成洗牌顺序
-	playbackMode := p.manager.GetState().PlaybackMode
+	playbackMode := p.manager.GetPlaybackMode()
 	if playbackMode == models.PlaybackModeRandom {
 		p.mu.Unlock()
 		p.generateShuffleOrder()
@@ -419,7 +415,7 @@ func (p *Player) SetCurrentPlaylist(name string, items []*models.PlaylistItem) {
 
 // SetPlayMode 设置播放模式
 func (p *Player) SetPlayMode(mode models.PlaybackMode) {
-	oldMode := p.manager.GetState().PlaybackMode
+	oldMode := p.manager.GetPlaybackMode()
 	p.manager.SetPlaybackMode(mode)
 
 	// 如果切换到随机播放模式，重新生成洗牌序列
@@ -427,6 +423,11 @@ func (p *Player) SetPlayMode(mode models.PlaybackMode) {
 		p.generateShuffleOrder()
 		utils.GetLogger().Info("切换到随机播放模式，重新生成洗牌序列")
 	}
+}
+
+// SetShowLyrics 设置歌词显示开关
+func (p *Player) SetShowLyrics(show bool) {
+	p.manager.SetShowLyrics(show)
 }
 
 // GetCurrentIndex 获取当前播放索引

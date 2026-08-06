@@ -244,8 +244,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "l":
 		if a.currentView == ViewPlayer {
 			// Toggle lyrics visibility
-			state := a.player.GetState()
-			state.ShowLyrics = !state.ShowLyrics
+			a.player.SetShowLyrics(!a.lastSnapshot.ShowLyrics)
 			// 状态更新会触发 UI 重新渲染
 		}
 		return a, nil
@@ -304,7 +303,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "m":
 		if a.currentView == ViewPlayer {
-			state := a.player.GetState()
+			state := a.lastSnapshot
 			var newMode models.PlaybackMode
 			switch state.PlaybackMode {
 			case models.PlaybackModeOrder:
@@ -735,7 +734,7 @@ func (a *App) handleLyricSearchViewKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		a.lyricSearchUI.Editing = true
 		// 如果搜索词为空，使用当前歌曲名
 		if a.lyricSearchKeyword == "" {
-			state := a.player.GetState()
+			state := a.lastSnapshot
 			if state.CurrentSong != nil {
 				a.lyricSearchKeyword = extractSongName(state.CurrentSong.ServerFileName)
 			}
@@ -767,7 +766,7 @@ func (a *App) handleLyricSearchViewKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		// 没有结果，进入编辑模式
 		a.lyricSearchUI.Editing = true
 		if a.lyricSearchKeyword == "" {
-			state := a.player.GetState()
+			state := a.lastSnapshot
 			if state.CurrentSong != nil {
 				a.lyricSearchKeyword = extractSongName(state.CurrentSong.ServerFileName)
 			}

@@ -12,8 +12,7 @@ import (
 // 并发模型:
 //   - 内部 state 是唯一可变状态，所有写操作必须经过 setter 方法，
 //     setter 持 stateMutex 写后触发 emitSnapshot 广播快照。
-//   - GetState 保留供历史调用方做只读访问(返回指针)，但调用方不得写字段;
-//     新代码应使用 Subscribe 订阅不可变快照。
+//   - 外部消费者通过 Subscribe 订阅不可变快照,不再访问共享指针。
 type PlaybackManager struct {
 	playerCore *PlayerCore
 	state      *models.PlaybackState
@@ -79,16 +78,6 @@ func (pm *PlaybackManager) SetState(state *models.PlaybackState) {
 	*pm.state = *state
 	pm.stateMutex.Unlock()
 	pm.emitSnapshot()
-}
-
-// GetState 返回内部状态指针(兼容历史调用方)。
-//
-// ⚠️ 仅限只读访问,且调用方必须理解:返回的指针指向内部状态,
-// 字段可能被并发 setter 修改。新代码请用 Subscribe 订阅不可变快照。
-func (pm *PlaybackManager) GetState() *models.PlaybackState {
-	pm.stateMutex.RLock()
-	defer pm.stateMutex.RUnlock()
-	return pm.state
 }
 
 // Subscribe 订阅不可变状态快照。返回的 channel 缓冲为 16,
@@ -254,4 +243,36 @@ func (pm *PlaybackManager) SetShowLyrics(show bool) {
 	pm.state.ShowLyrics = show
 	pm.stateMutex.Unlock()
 	pm.emitSnapshot()
+}
+
+// GetPlaybackMode 持锁读取播放模式
+func (pm *PlaybackManager) GetPlaybackMode() models.PlaybackMode {
+	pm.stateMutex.RLock()
+	defer pm.stateMutex.RUnlock()
+	return pm.state.PlaybackMode
+}
+
+// GetIsPlaying 持锁读取播放状态
+func (pm *PlaybackManager) GetIsPlaying() bool {
+	pm.stateMutex.RLock()
+	defer pm.stateMutex.RUnlock()
+	return pm.state.IsPlaying
+}
+
+// GetCurrentSong 持锁读取当前歌曲(返回指针副本,调用方只读)
+func (pm *PlaybackManager) GetCurrentSong() *models.PlaylistItem {
+	pm.stateMutex.RLock()
+	defer pm.stateMutex.RUnlock()
+	if pm.state.CurrentSong == nil {
+		return nil
+	}
+	song := *pm.state.CurrentSong
+	return &song
+}
+
+// GetShowLyrics 持锁读取歌词显示开关
+func (pm *PlaybackManager) GetShowLyrics() bool {
+	pm.stateMutex.RLock()
+	defer pm.stateMutex.RUnlock()
+	return pm.state.ShowLyrics
 }

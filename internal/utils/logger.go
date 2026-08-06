@@ -87,11 +87,11 @@ func (l *Logger) log(level string, format string, args ...interface{}) {
 	if l.file != nil {
 		if _, err := l.file.WriteString(logLine); err != nil {
 			// 如果写入失败，输出到stderr
-			fmt.Fprintf(os.Stderr, logLine)
+			fmt.Fprint(os.Stderr, logLine)
 		}
 	} else {
 		// 如果文件不可用，输出到stderr
-		fmt.Fprintf(os.Stderr, logLine)
+		fmt.Fprint(os.Stderr, logLine)
 	}
 }
 
