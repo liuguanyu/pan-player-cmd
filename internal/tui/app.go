@@ -20,7 +20,7 @@ import (
 type App struct {
 	config   *config.Config
 	api      *api.BaiduPanClient
-	player   *player.Player
+	player   player.TuiPlayer
 	playlist *playlist.Manager
 
 	// UI 状态
