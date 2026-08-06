@@ -103,7 +103,7 @@ func (a *App) renderPlaylistView() string {
 	// 底部提示
 	b.WriteString("\n")
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#666"))
-	b.WriteString(helpStyle.Render(" ↑↓ 选择  |  Enter 打开  |  n 新建  |  r 改名  |  d 删除  |  R 刷新  |  h 帮助  |  q 退出 "))
+	b.WriteString(helpStyle.Render(" ↑↓ 选择  |  Enter 打开  |  n 新建  |  r 改名  |  d 删除  |  R 刷新  |  h 帮助  |  Esc 退出 "))
 
 	return b.String()
 }
