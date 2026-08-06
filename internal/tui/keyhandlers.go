@@ -80,7 +80,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if a.currentView == ViewHelp || a.currentView == ViewPlayer {
 			// 如果是从播放器视图返回，保存当前播放状态
 			if a.currentView == ViewPlayer {
-				a.lastPlaybackState = a.player.GetState()
+				a.lastPlaybackState = a.lastSnapshot
 			}
 			a.sheepVis.SetVisible(false)
 			a.currentView = ViewPlaylist
@@ -100,7 +100,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if a.currentView == ViewPlaylist && a.selectedIndex > 0 {
 			a.selectedIndex--
 		} else if a.currentView == ViewPlayer {
-			volume := a.player.GetState().Volume + 0.1
+			volume := a.lastSnapshot.Volume + 0.1
 			if volume > 1 {
 				volume = 1
 			}
@@ -112,7 +112,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if a.currentView == ViewPlaylist && a.selectedIndex < len(a.playlists)-1 {
 			a.selectedIndex++
 		} else if a.currentView == ViewPlayer {
-			volume := a.player.GetState().Volume - 0.1
+			volume := a.lastSnapshot.Volume - 0.1
 			if volume < 0 {
 				volume = 0
 			}
@@ -129,7 +129,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				selectedPlaylist := a.playlists[a.selectedIndex]
 
 				// 检查是否正在播放同一个播放列表
-				currentState := a.player.GetState()
+				currentState := a.lastSnapshot
 				if currentState.IsPlaying &&
 					currentState.CurrentSong != nil &&
 					currentState.CurrentPlaylistName == selectedPlaylist.Name {
@@ -144,7 +144,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					a.player.SetCurrentPlaylist(selectedPlaylist.Name, selectedPlaylist.Items)
 
 					// 检查是否有保存的播放状态（从上次退出时保存）
-					if a.lastPlaybackState != nil && a.lastPlaybackState.CurrentSong != nil {
+					if a.lastPlaybackState.CurrentSong != nil {
 						// 找到当前播放列表中对应的歌曲
 						targetIndex := -1
 						for i, item := range selectedPlaylist.Items {
@@ -181,8 +181,8 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 							}()
 						} else {
 							// 歌曲不在列表中，从头开始播放
+							state := a.lastSnapshot
 							go func() {
-								state := a.player.GetState()
 								var startIndex int
 								if state.PlaybackMode == models.PlaybackModeRandom {
 									startIndex = a.player.GetShuffleStartIndex()
@@ -196,8 +196,8 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 						}
 					} else {
 						// 没有保存的状态，从头开始播放
+						state := a.lastSnapshot
 						go func() {
-							state := a.player.GetState()
 							var startIndex int
 							if state.PlaybackMode == models.PlaybackModeRandom {
 								startIndex = a.player.GetShuffleStartIndex()

@@ -80,7 +80,7 @@ func (a *App) loadLyricsForTrack(track *models.PlaylistItem) {
 
 // handleLyricSearch 处理歌词搜索
 func (a *App) handleLyricSearch() tea.Cmd {
-	state := a.player.GetState()
+	state := a.lastSnapshot
 	if state.CurrentSong == nil {
 		return nil
 	}
@@ -142,7 +142,7 @@ func (a *App) confirmLyricSelection() tea.Cmd {
 
 // handleLyricUpload 处理歌词上传
 func (a *App) handleLyricUpload() {
-	state := a.player.GetState()
+	state := a.lastSnapshot
 	if state.CurrentSong == nil || len(state.LyricsRaw) == 0 {
 		return
 	}
@@ -203,13 +203,12 @@ func (a *App) uploadLyricsToBaidu(targetPath, lrcContent string) {
 	a.showMessage("歌词已上传至网盘")
 
 	// 更新当前歌曲的LRCPath
-	state := a.player.GetState()
+	state := a.lastSnapshot
 	if state.CurrentSong != nil {
 		// 创建一个新的PlaylistItem副本，更新LRCPath
 		updatedSong := *state.CurrentSong
 		updatedSong.LRCPath = targetPath
-		// 这里需要更新播放器中的当前歌曲
-		// 为简化实现，我们只更新状态
-		state.CurrentSong = &updatedSong
+		// 通过 setter 安全更新播放器中的当前歌曲
+		a.player.SetCurrentSong(&updatedSong)
 	}
 }

@@ -78,7 +78,11 @@ type App struct {
 	shimmerFrame int
 
 	// 播放状态持久化
-	lastPlaybackState *models.PlaybackState
+	lastPlaybackState models.PlaybackState
+
+	// 状态快照订阅(不可变快照,所有渲染只读此副本)
+	snapshotSub  <-chan models.PlaybackState
+	lastSnapshot models.PlaybackState
 
 	// 歌词管理器
 	lyricsManager *lyrics.Manager
@@ -159,13 +163,16 @@ func NewApp(cfg *config.Config) *App {
 		app.updateRecentPlaylist(track)
 	})
 
+	// 订阅不可变状态快照,渲染只读 lastSnapshot,彻底移除对 GetState 共享指针的依赖
+	app.snapshotSub = pl.Subscribe()
+
 	return app
 }
 
 // Init 初始化
 func (a *App) Init() tea.Cmd {
-	// 检查登录状态，如果已登录则直接进入播放列表
-	return a.checkLogin()
+	// 启动快照消费 + 检查登录状态
+	return tea.Batch(a.waitForSnapshot(), a.checkLogin())
 }
 
 // Update 更新状态
@@ -243,11 +250,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// 解析并显示歌词
 		parsed := lyrics.ParseLRC(msg.lrcContent)
-		state := a.player.GetState()
-		state.LyricsRaw = msg.lrcContent
-		state.LyricsParsed = parsed.Lines
+		a.player.SetLyrics(msg.lrcContent, parsed.Lines, true)
 		a.currentLyrics = parsed.Lines
-		state.ShowLyrics = true
 
 		// 强制重新渲染
 		a.version++
@@ -282,7 +286,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// 检查歌曲是否切换（从后台恢复时）
 		if a.currentView == ViewPlayer {
-			state := a.player.GetState()
+			state := a.lastSnapshot
 			if state.CurrentSong != nil && state.CurrentSong.FsID != a.lastTrackFsID {
 				// 歌曲已切换，更新跟踪ID并加载新歌词
 				a.lastTrackFsID = state.CurrentSong.FsID
@@ -300,7 +304,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.shimmerFrame++
 
 			// 检查歌曲是否切换
-			state := a.player.GetState()
+			state := a.lastSnapshot
 			if state.CurrentSong != nil && state.CurrentSong.FsID != a.lastTrackFsID {
 				// 歌曲已切换，更新跟踪ID并加载新歌词
 				a.lastTrackFsID = state.CurrentSong.FsID
@@ -359,7 +363,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.shimmerFrame++
 
 			// 检查歌曲是否切换
-			state := a.player.GetState()
+			state := a.lastSnapshot
 			if state.CurrentSong != nil && state.CurrentSong.FsID != a.lastTrackFsID {
 				// 歌曲已切换，更新跟踪ID并加载新歌词
 				a.lastTrackFsID = state.CurrentSong.FsID
@@ -381,6 +385,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.loadingDots++
 			return a, a.tickLoadingAnimation()
 		}
+
+	case SnapshotMsg:
+		// 接收播放器不可变快照,存为本地副本,后续渲染只读此副本
+		a.lastSnapshot = msg.State
+		a.version++
+		// 继续消费下一帧快照
+		cmds = append(cmds, a.waitForSnapshot())
 	}
 
 	return a, tea.Batch(cmds...)
@@ -463,6 +474,22 @@ type LoadingAnimationMsg struct{}
 
 // PlayerUpdateMsg 播放器状态更新消息
 type PlayerUpdateMsg struct{}
+
+// SnapshotMsg 播放器不可变状态快照(来自 Player.Subscribe 事件流)
+type SnapshotMsg struct {
+	State models.PlaybackState
+}
+
+// waitForSnapshot 返回一个命令,从订阅 channel 读取下一帧快照并包装为 SnapshotMsg
+func (a *App) waitForSnapshot() tea.Cmd {
+	return func() tea.Msg {
+		state, ok := <-a.snapshotSub
+		if !ok {
+			return nil
+		}
+		return SnapshotMsg{State: state}
+	}
+}
 
 // SongChangedMsg 歌曲切换消息
 type SongChangedMsg struct {

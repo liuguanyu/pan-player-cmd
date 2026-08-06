@@ -46,7 +46,7 @@ func (a *App) computeWindowTitle() string {
 		return "Pan Player"
 	}
 
-	state := a.player.GetState()
+	state := a.lastSnapshot
 	if state.CurrentSong == nil {
 		return "Pan Player"
 	}
@@ -86,7 +86,7 @@ func (a *App) resetWindowTitle() tea.Cmd {
 
 // cyclePlaybackSpeed 切换播放倍速
 func (a *App) cyclePlaybackSpeed() {
-	state := a.player.GetState()
+	state := a.lastSnapshot
 	currentSpeed := state.PlaybackRate
 
 	// 找到当前速度在列表中的位置，切换到下一个

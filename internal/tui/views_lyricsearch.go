@@ -19,7 +19,7 @@ func (a *App) renderLyricSearchView() string {
 	b.WriteString(titleStyle.Render("🎵 歌词搜索"))
 	b.WriteString("\n\n")
 
-	state := a.player.GetState()
+	state := a.lastSnapshot
 	if state.CurrentSong != nil {
 		songStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#06BF54")).

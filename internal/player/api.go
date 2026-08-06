@@ -125,11 +125,10 @@ func (p *Player) LoadTrack(ctx context.Context, track *models.PlaylistItem) erro
 	p.mu.Unlock()
 
 	// 更新播放状态中的当前歌曲
-	state := p.manager.GetState()
-	state.CurrentSong = track
+	p.manager.SetCurrentSong(track)
 
 	// 标记为播放中，这样加载完成后会自动播放
-	state.IsPlaying = true
+	p.manager.SetIsPlaying(true)
 
 	ch := p.decoder.LoadTrack(ctx, track)
 	go func() {
@@ -146,8 +145,7 @@ func (p *Player) LoadTrack(ctx context.Context, track *models.PlaylistItem) erro
 		if res.err != nil {
 			utils.GetLogger().Error("加载音轨失败: %v", res.err)
 			// 加载失败，标记为暂停
-			state := p.manager.GetState()
-			state.IsPlaying = false
+			p.manager.SetIsPlaying(false)
 			return
 		}
 
@@ -180,8 +178,7 @@ func (p *Player) LoadTrack(ctx context.Context, track *models.PlaylistItem) erro
 		// 自动开始播放
 		p.core.Play()
 		utils.GetLogger().Info("Play() 调用完成")
-		state := p.manager.GetState()
-		state.IsPlaying = true
+		p.manager.SetIsPlaying(true)
 		p.mu.Unlock()
 
 		// 触发歌曲开始播放的回调
@@ -207,16 +204,14 @@ func (p *Player) GetState() *models.PlaybackState {
 func (p *Player) Play() {
 	p.core.Play()
 	// 更新播放状态
-	state := p.manager.GetState()
-	state.IsPlaying = true
+	p.manager.SetIsPlaying(true)
 }
 
 // Pause 暂停播放
 func (p *Player) Pause() {
 	p.core.Pause()
 	// 更新播放状态
-	state := p.manager.GetState()
-	state.IsPlaying = false
+	p.manager.SetIsPlaying(false)
 }
 
 // Stop 停止播放并清理资源
@@ -240,8 +235,7 @@ func (p *Player) SetVolume(volume float64) {
 	}
 
 	// 更新播放状态中的音量
-	state := p.manager.GetState()
-	state.Volume = volume
+	p.manager.SetVolume(volume)
 
 	// 设置核心播放器的音量
 	p.core.SetVolume(volume)
@@ -258,8 +252,7 @@ func (p *Player) SetSpeed(speed float64) {
 	}
 
 	// 更新播放状态中的速度
-	state := p.manager.GetState()
-	state.PlaybackRate = speed
+	p.manager.SetPlaybackRate(speed)
 
 	// 设置核心播放器的速度
 	p.core.SetSpeed(speed)
@@ -268,6 +261,16 @@ func (p *Player) SetSpeed(speed float64) {
 // SetTapWrapper sets an optional audio tap for visualization (e.g. dancing sheep).
 func (p *Player) SetTapWrapper(wrapper func(beep.Streamer) beep.Streamer) {
 	p.core.SetTapWrapper(wrapper)
+}
+
+// SetLyrics 设置歌词内容及显示开关(供 UI 层调用,内部持锁安全写入)
+func (p *Player) SetLyrics(raw string, parsed []models.LyricLine, show bool) {
+	p.manager.SetLyrics(raw, parsed, show)
+}
+
+// Subscribe 订阅不可变状态快照
+func (p *Player) Subscribe() <-chan models.PlaybackState {
+	return p.manager.Subscribe()
 }
 
 // PlayNext 播放下一首
@@ -383,8 +386,7 @@ func (p *Player) SetCurrentSong(track *models.PlaylistItem) {
 	p.mu.Unlock()
 
 	// 更新播放状态中的当前歌曲
-	state := p.manager.GetState()
-	state.CurrentSong = track
+	p.manager.SetCurrentSong(track)
 }
 
 // SetCurrentPlaylist 设置当前播放列表
@@ -412,15 +414,13 @@ func (p *Player) SetCurrentPlaylist(name string, items []*models.PlaylistItem) {
 	p.mu.Unlock()
 
 	// 更新播放状态中的播放列表名称
-	state := p.manager.GetState()
-	state.CurrentPlaylistName = name
+	p.manager.SetCurrentPlaylistName(name)
 }
 
 // SetPlayMode 设置播放模式
 func (p *Player) SetPlayMode(mode models.PlaybackMode) {
-	state := p.manager.GetState()
-	oldMode := state.PlaybackMode
-	state.PlaybackMode = mode
+	oldMode := p.manager.GetState().PlaybackMode
+	p.manager.SetPlaybackMode(mode)
 
 	// 如果切换到随机播放模式，重新生成洗牌序列
 	if mode == models.PlaybackModeRandom && oldMode != mode {

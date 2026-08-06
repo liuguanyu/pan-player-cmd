@@ -16,7 +16,7 @@ import (
 func (a *App) renderPlayerView() string {
 	var b strings.Builder
 
-	state := a.player.GetState()
+	state := a.lastSnapshot
 
 	// 播放列表信息
 	if state.CurrentPlaylistName != "" {
@@ -83,7 +83,7 @@ func (a *App) renderPlayerView() string {
 	}
 
 	// 进度条（单行，包含播放状态、进度、时间、音量）
-	progressBar := a.renderProgressBar(state)
+	progressBar := a.renderProgressBar(&state)
 	b.WriteString(progressBar)
 	b.WriteString("\n\n")
 
