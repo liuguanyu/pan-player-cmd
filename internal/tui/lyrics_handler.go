@@ -126,12 +126,13 @@ func (a *App) handleLyricSearchViewKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 			a.lyricSearchUI.Editing = false
 			if len(a.lyricSearchUI.Results) == 0 {
 				a.currentView = ViewPlayer
+				a.sheepVis.SetVisible(true)
 				a.lyricSearchUI.Visible = false
 				a.lyricSearchUI.Results = nil
 				a.lyricSearchKeyword = ""
 				a.lyricSearchCursor = 0
 				// 回到播放界面，恢复进度轮询与终端标题
-				return a, a.resumePlayerUpdates()
+				return a, tea.Sequence(tea.ClearScreen, a.resumePlayerUpdates())
 			}
 			return a, nil
 		case "left":
@@ -234,13 +235,14 @@ func (a *App) handleLyricSearchViewKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 	case "esc":
 		// 返回播放界面
 		a.currentView = ViewPlayer
+		a.sheepVis.SetVisible(true)
 		a.lyricSearchUI.Visible = false
 		a.lyricSearchUI.Results = nil
 		a.lyricSearchUI.Editing = false
 		a.lyricSearchKeyword = ""
 		a.lyricSearchCursor = 0
 		// 回到播放界面，恢复进度轮询与终端标题
-		return a, a.resumePlayerUpdates()
+		return a, tea.Sequence(tea.ClearScreen, a.resumePlayerUpdates())
 
 	case "backspace":
 		// 在非编辑模式下也允许退格键删除搜索词（正确处理中文等多字节字符）

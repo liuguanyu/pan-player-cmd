@@ -17,6 +17,7 @@ import (
 	"github.com/liuguanyu/pan-player-cmd/internal/player"
 	"github.com/liuguanyu/pan-player-cmd/internal/playlist"
 	"github.com/liuguanyu/pan-player-cmd/internal/utils"
+	"github.com/liuguanyu/pan-player-cmd/internal/visualizer"
 	"github.com/skip2/go-qrcode"
 )
 
@@ -101,6 +102,9 @@ type App struct {
 	awaitingLyricUploadConfirm bool
 	uploadTargetPath           string
 	uploadLyricsContent        string
+
+	// 可视化
+	sheepVis *visualizer.ActiveVisualizer
 }
 
 // LyricSearchUI 歌词搜索UI状态
@@ -130,11 +134,19 @@ const (
 // NewApp 创建新的 TUI 应用
 func NewApp(cfg *config.Config) *App {
 	apiClient := api.NewBaiduPanClient(cfg.API.BaiduPan.TokenFile)
+
+	// Create visualizer (may not be supported on all terminals)
+	sheepVis := visualizer.NewActiveVisualizer()
+
 	pl := player.NewPlayer(&player.PlayerConfig{
 		AudioDevice: cfg.Player.AudioDevice,
 		CacheDir:    cfg.App.DataDir + "/cache",
 		Speed:       cfg.Player.PlaybackRate,
 	}, apiClient)
+
+	if sheepVis.IsSupported() {
+		pl.SetTapWrapper(sheepVis.CreateTap)
+	}
 	plManager := playlist.NewManager(cfg.App.DataDir)
 
 	app := &App{
@@ -144,6 +156,7 @@ func NewApp(cfg *config.Config) *App {
 		playlist:      plManager,
 		currentView:   ViewLogin, // 直接进入登录界面
 		lyricsManager: lyrics.NewManager(),
+		sheepVis:      sheepVis,
 	}
 
 	// 设置歌曲播放回调，用于更新最近播放记录
@@ -172,11 +185,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.width = msg.Width
 		a.height = msg.Height
 		a.ready = true
+		a.sheepVis.SetTermHeight(msg.Height)
 
 	case LoginSuccessMsg:
 		a.isLoggedIn = true
 		a.userInfo = msg.UserInfo
 		a.currentView = ViewPlaylist
+		a.sheepVis.Start()
 		// 登录成功后加载播放列表
 		return a, a.loadPlaylists()
 
@@ -219,6 +234,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case lyricDownloadDoneMsg:
 		// 无论成功失败，都先退出搜索页，避免用户看到“按了回车没反应”
 		a.currentView = ViewPlayer
+		a.sheepVis.SetVisible(true)
 		a.lyricSearchUI.Visible = false
 		a.lyricSearchUI.Editing = false
 
@@ -227,7 +243,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.version++
 			a.showMessage("下载失败: " + msg.err.Error())
 			// 回到播放界面，恢复进度轮询与终端标题
-			return a, a.resumePlayerUpdates()
+			return a, tea.Sequence(tea.ClearScreen, a.resumePlayerUpdates())
 		}
 
 		// 解析并显示歌词
@@ -242,7 +258,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.version++
 		a.showMessage("歌词已加载，按 'u' 上传至网盘")
 		// 回到播放界面，恢复进度轮询与终端标题
-		return a, a.resumePlayerUpdates()
+		return a, tea.Sequence(tea.ClearScreen, a.resumePlayerUpdates())
 
 	case PlaylistsLoadedMsg:
 		a.playlists = msg.Playlists
@@ -728,6 +744,17 @@ func (a *App) renderPlayerView() string {
 		b.WriteString("\n")
 	}
 
+	// 可视化（小羊跳舞）— Sixel 图形由后台 goroutine 直接写入 os.Stdout，
+	// 绕过 Bubble Tea 渲染管线以避免其行内 diff 破坏 Sixel DCS 序列。
+	// 这里只预留空白行，并把当前逻辑行号传给 visualizer，避免用终端底部
+	// 绝对定位导致页面切换后旧图残留在非播放页中间。
+	if a.sheepVis.Enabled() {
+		a.sheepVis.SetRenderRow(strings.Count(b.String(), "\n") + 1)
+		for i := 0; i < visualizer.DefaultVisualizerRows; i++ {
+			b.WriteString("\n")
+		}
+	}
+
 	// 消息显示（在快捷键上方）
 	if a.currentMessage != "" && time.Now().Before(a.messageTimeout) {
 		messageStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#06BF54")).Bold(true).Padding(0, 2)
@@ -742,9 +769,9 @@ func (a *App) renderPlayerView() string {
 	// 动态构建快捷键提示 - 只在有歌词时显示 'u' 键
 	var shortcutString string
 	if state.ShowLyrics && len(a.currentLyrics) > 0 {
-		shortcutString = "[空格]暂停/恢复  [n]下一曲  [p]上一曲  [↑/↓]音量  [m]模式  [>]倍速  [l]歌词  [s]搜索歌词  [u]上传歌词  [Ctrl+Z]后台挂起  [Esc]返回"
+		shortcutString = "[空格]暂停/恢复  [n]下一曲  [p]上一曲  [↑/↓]音量  [m]模式  [>]倍速  [l]歌词  [v]可视化  [s]搜索歌词  [u]上传歌词  [Ctrl+Z]后台挂起  [Esc]返回"
 	} else {
-		shortcutString = "[空格]暂停/恢复  [n]下一曲  [p]上一曲  [↑/↓]音量  [m]模式  [>]倍速  [l]歌词  [s]搜索歌词  [Ctrl+Z]后台挂起  [Esc]返回"
+		shortcutString = "[空格]暂停/恢复  [n]下一曲  [p]上一曲  [↑/↓]音量  [m]模式  [>]倍速  [l]歌词  [v]可视化  [s]搜索歌词  [Ctrl+Z]后台挂起  [Esc]返回"
 	}
 	b.WriteString(controlStyle.Render(shortcutString))
 
@@ -1061,6 +1088,7 @@ func (a *App) renderHelpView() string {
 		{"s", "搜索歌词"},
 		{"u", "上传歌词到网盘"},
 		{">", "切换播放倍速"},
+		{"v", "切换可视化（小羊跳舞/Sixel）"},
 	}
 	for _, shortcut := range shortcuts {
 		b.WriteString(helpStyle.Render(fmt.Sprintf("%-10s %s", shortcut.key, shortcut.desc)))
@@ -1494,9 +1522,10 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "h":
 		if a.currentView != ViewHelp {
+			a.sheepVis.SetVisible(false)
 			a.currentView = ViewHelp
 		}
-		return a, nil
+		return a, tea.ClearScreen
 
 	case "esc":
 		if a.currentView == ViewHelp || a.currentView == ViewPlayer {
@@ -1504,11 +1533,13 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if a.currentView == ViewPlayer {
 				a.lastPlaybackState = a.player.GetState()
 			}
+			a.sheepVis.SetVisible(false)
 			a.currentView = ViewPlaylist
 			a.inputBuffer = "" // 清空输入缓冲
 			// 离开播放界面，恢复默认终端标题
 			// 重新加载播放列表以更新"最近播放"
-			return a, tea.Batch(a.loadPlaylists(), a.updateWindowTitleCmd())
+			a.version++
+			return a, tea.Batch(a.fullRepaintCmd(), a.loadPlaylists(), a.updateWindowTitleCmd())
 		}
 		return a, nil
 
@@ -1551,7 +1582,8 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					currentState.CurrentPlaylistName == selectedPlaylist.Name {
 					// 正在播放同一列表，直接切换视图，不中断播放
 					a.currentView = ViewPlayer
-					return a, a.resumePlayerUpdates()
+					a.sheepVis.SetVisible(true)
+					return a, tea.Sequence(tea.ClearScreen, a.resumePlayerUpdates())
 				}
 
 				if len(selectedPlaylist.Items) > 0 {
@@ -1627,8 +1659,9 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 			a.currentView = ViewPlayer
+			a.sheepVis.SetVisible(true)
 			// 启动播放器状态更新定时器
-			return a, a.resumePlayerUpdates()
+			return a, tea.Sequence(tea.ClearScreen, a.resumePlayerUpdates())
 		}
 		return a, nil
 	case " ":
@@ -1662,15 +1695,28 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	case "v":
+		if a.currentView == ViewPlayer {
+			// Toggle dancing sheep visualization
+			if !a.sheepVis.Toggle() {
+				a.showMessage(a.sheepVis.UnsupportedReason())
+			}
+			a.version++
+			return a, a.fullRepaintCmd()
+		}
+		return a, nil
+
 	case "s":
 		if a.currentView == ViewPlayer {
 			// 切换到歌词搜索视图，清除旧搜索状态，让当前歌曲名自动填入
+			a.sheepVis.SetVisible(false)
 			a.currentView = ViewLyricSearch
 			a.lyricSearchKeyword = ""
 			a.lyricSearchCursor = 0
 			a.lyricSearchUI.Results = nil
 			a.lyricSearchUI.SelectedIndex = 0
-			return a, a.handleLyricSearch()
+			a.version++
+			return a, tea.Sequence(tea.ClearScreen, a.handleLyricSearch())
 		}
 		return a, nil
 
@@ -1848,6 +1894,13 @@ func (a *App) Run() error {
 	p := tea.NewProgram(a, tea.WithAltScreen())
 	_, err := p.Run()
 	return err
+}
+
+func (a *App) fullRepaintCmd() tea.Cmd {
+	return tea.Sequence(
+		tea.ClearScreen,
+		func() tea.Msg { return ForceRenderMsg{} },
+	)
 }
 
 // Messages

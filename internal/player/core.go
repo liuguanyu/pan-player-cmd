@@ -11,14 +11,15 @@ import (
 
 // PlayerCore 是播放器的执行引擎，只负责播放控制，不处理数据加载
 type PlayerCore struct {
-	ctrl        *beep.Ctrl
-	volume      *effects.Volume
-	resampler   *beep.Resampler // 速度控制层，包装 volume
-	streamer    beep.StreamSeekCloser
-	format      beep.Format
-	isPlaying   bool
-	speed       float64 // 当前播放倍速
-	onTrackEnd  func()
+	ctrl       *beep.Ctrl
+	volume     *effects.Volume
+	resampler  *beep.Resampler // 速度控制层，包装 volume
+	streamer   beep.StreamSeekCloser
+	format     beep.Format
+	isPlaying  bool
+	speed      float64 // 当前播放倍速
+	onTrackEnd func()
+	tapWrapper func(beep.Streamer) beep.Streamer // optional audio tap for visualization
 }
 
 // SetOnTrackEnd 设置播放结束时的回调函数
@@ -145,8 +146,14 @@ func (pc *PlayerCore) SetStream(streamer beep.StreamSeekCloser, format beep.Form
 	// 质量设为4: 良好的性能和质量平衡
 	pc.resampler = beep.ResampleRatio(4, float64(pc.speed), pc.volume)
 
+	// 确定送入 ctrl 的流：如果有 tapWrapper 则包裹一层
+	streamerForCtrl := beep.Streamer(pc.resampler)
+	if pc.tapWrapper != nil {
+		streamerForCtrl = pc.tapWrapper(pc.resampler)
+	}
+
 	pc.ctrl = &beep.Ctrl{
-		Streamer: pc.resampler,
+		Streamer: streamerForCtrl,
 		Paused:   true, // 初始设置为暂停状态，Play() 会取消暂停
 	}
 
@@ -226,4 +233,9 @@ func (pc *PlayerCore) SetVolume(volume float64) {
 // GetIsPlaying 返回是否正在播放（用于状态更新）
 func (pc *PlayerCore) GetIsPlaying() bool {
 	return pc.isPlaying
+}
+
+// SetTapWrapper sets an optional audio tap wrapper for visualization.
+func (pc *PlayerCore) SetTapWrapper(wrapper func(beep.Streamer) beep.Streamer) {
+	pc.tapWrapper = wrapper
 }

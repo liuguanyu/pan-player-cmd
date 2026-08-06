@@ -265,6 +265,11 @@ func (p *Player) SetSpeed(speed float64) {
 	p.core.SetSpeed(speed)
 }
 
+// SetTapWrapper sets an optional audio tap for visualization (e.g. dancing sheep).
+func (p *Player) SetTapWrapper(wrapper func(beep.Streamer) beep.Streamer) {
+	p.core.SetTapWrapper(wrapper)
+}
+
 // PlayNext 播放下一首
 func (p *Player) PlayNext() {
 	if p.currentPlaylist == nil || len(p.currentPlaylist.Items) == 0 {
@@ -550,4 +555,3 @@ func (p *Player) getShufflePrevious() int {
 
 	return p.shuffledIndices[p.shufflePosition]
 }
-
