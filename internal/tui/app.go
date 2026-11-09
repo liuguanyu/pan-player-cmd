@@ -277,6 +277,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// 强制重新渲染以更新播放进度
 			a.version++
 			a.shimmerFrame++
+			utils.GetLogger().Info("[SHIMMER] PlayerUpdateMsg: frame=%d, time=%d", a.shimmerFrame, time.Now().UnixMilli())
 
 			// 检查歌曲是否切换
 			state := a.lastSnapshot
@@ -336,6 +337,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// 强制重新渲染以更新播放进度
 			a.version++
 			a.shimmerFrame++
+			utils.GetLogger().Info("[SHIMMER] TickMsg: frame=%d, time=%d", a.shimmerFrame, time.Now().UnixMilli())
 
 			// 检查歌曲是否切换
 			state := a.lastSnapshot
