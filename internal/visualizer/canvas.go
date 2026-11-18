@@ -63,6 +63,9 @@ func (c *Canvas) FillRect(x, y, w, h int, clr color.RGBA) {
 
 // FillEllipse draws a filled ellipse centered at (cx, cy) with radii rx, ry.
 func (c *Canvas) FillEllipse(cx, cy, rx, ry int, clr color.RGBA) {
+	if rx <= 0 || ry <= 0 {
+		return
+	}
 	for dy := -ry; dy <= ry; dy++ {
 		for dx := -rx; dx <= rx; dx++ {
 			if float64(dx*dx)/float64(rx*rx)+float64(dy*dy)/float64(ry*ry) <= 1.0 {
@@ -126,11 +129,14 @@ func (c *Canvas) StrokeLine(x0, y0, x1, y1, thickness int, clr color.RGBA) {
 
 // FillTriangle draws a filled triangle.
 func (c *Canvas) FillTriangle(x0, y0, x1, y1, x2, y2 int, clr color.RGBA) {
+	if sign(x0, y0, x1, y1, x2, y2) == 0 {
+		return
+	}
 	// Bounding box
-	minX := min3(x0, x1, x2)
-	minY := min3(y0, y1, y2)
-	maxX := max3(x0, x1, x2)
-	maxY := max3(y0, y1, y2)
+	minX := max(0, min3(x0, x1, x2))
+	minY := max(0, min3(y0, y1, y2))
+	maxX := min(c.W-1, max3(x0, x1, x2))
+	maxY := min(c.H-1, max3(y0, y1, y2))
 
 	for y := minY; y <= maxY; y++ {
 		for x := minX; x <= maxX; x++ {
@@ -144,6 +150,12 @@ func (c *Canvas) FillTriangle(x0, y0, x1, y1, x2, y2 int, clr color.RGBA) {
 // setPixelSafe sets a pixel if within bounds.
 func (c *Canvas) setPixelSafe(x, y int, clr color.RGBA) {
 	if x >= 0 && x < c.W && y >= 0 && y < c.H {
+		if clr.A < 255 {
+			old := c.img.RGBAAt(x, y)
+			a := uint32(clr.A)
+			inv := 255 - a
+			clr = color.RGBA{uint8((uint32(clr.R)*a + uint32(old.R)*inv) / 255), uint8((uint32(clr.G)*a + uint32(old.G)*inv) / 255), uint8((uint32(clr.B)*a + uint32(old.B)*inv) / 255), 255}
+		}
 		c.img.SetRGBA(x, y, clr)
 	}
 }

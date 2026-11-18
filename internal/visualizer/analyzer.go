@@ -84,9 +84,12 @@ func (a *AudioAnalyzer) Analyze(buf *RingBuffer) AudioAnalysis {
 		return AudioAnalysis{Intensity: IntensityLow}
 	}
 
-	// Build mono window from stereo samples
+	// Zero padding must not retain the preceding FFT window.
+	clear(a.window)
+	var power float64
 	for i := 0; i < FFTWindow && i < len(raw); i++ {
-		a.window[i] = float64(raw[i][0]+raw[i][1]) / 2.0
+		a.window[i] = (raw[i][0] + raw[i][1]) / 2.0
+		power += (raw[i][0]*raw[i][0] + raw[i][1]*raw[i][1]) / 2
 	}
 
 	// Apply Hann window to reduce spectral leakage
@@ -96,33 +99,33 @@ func (a *AudioAnalyzer) Analyze(buf *RingBuffer) AudioAnalysis {
 	spectrum := realFFT(a.window)
 	nBins := len(spectrum)
 
-	// Average volume (RMS of magnitude)
-	var sumMag float64
-	for i := 0; i < nBins; i++ {
-		sumMag += cmplx.Abs(spectrum[i])
+	// PCM is already in [-1,1]. Normalize Hann-window magnitudes before
+	// compressing; the old Android-byte divisors made real PCM nearly silent.
+	magnitudes := make([]float64, nBins)
+	for i := range spectrum {
+		magnitudes[i] = cmplx.Abs(spectrum[i]) * 4 / float64(FFTWindow)
 	}
-	avgMag := sumMag / float64(nBins)
-	avgVolume := clamp(avgMag/50.0, 0, 1) // scale to 0-1
+	avgVolume := clamp(math.Sqrt(power/float64(len(raw)))*2, 0, 1)
 
 	// Bass energy: first 10% of bins
 	bassBins := max(1, nBins/10)
 	var bassSum float64
 	for i := 0; i < bassBins; i++ {
-		bassSum += cmplx.Abs(spectrum[i])
+		bassSum += magnitudes[i] * magnitudes[i]
 	}
-	bassEnergy := clamp(bassSum/float64(bassBins)/80.0, 0, 1)
+	bassEnergy := clamp(math.Sqrt(bassSum)*1.5, 0, 1)
 
 	// Treble energy: bins from 70% to end
 	trebleStart := nBins * 7 / 10
 	var trebleSum float64
 	trebleCount := 0
 	for i := trebleStart; i < nBins; i++ {
-		trebleSum += cmplx.Abs(spectrum[i])
+		trebleSum += magnitudes[i] * magnitudes[i]
 		trebleCount++
 	}
 	trebleEnergy := 0.0
 	if trebleCount > 0 {
-		trebleEnergy = clamp(trebleSum/float64(trebleCount)/30.0, 0, 1)
+		trebleEnergy = clamp(math.Sqrt(trebleSum)*2, 0, 1)
 	}
 
 	// Beat detection: compare current bass to recent average
@@ -153,6 +156,7 @@ func (a *AudioAnalyzer) Analyze(buf *RingBuffer) AudioAnalysis {
 		Beat:          beat,
 		Peak:          peak,
 		Intensity:     intensity,
+		Spectrum:      magnitudes,
 	}
 }
 

@@ -25,15 +25,15 @@ type ActiveVisualizer struct {
 	// updates this from renderPlayerView so the image sits directly below lyrics.
 	renderRow int
 
-	// audioActive reflects whether the player is currently producing audio.
-	// When false (paused), the runLoop skips analysis & rendering so the
-	// visualizer freezes instead of dancing on stale ring-buffer samples.
+	// audioActive reflects whether the player is producing audio. On pause we
+	// feed silence until the pose settles (including landing an airborne jump).
 	audioActive bool
 
 	// Internal
 	ringBuf *RingBuffer
 	stopCh  chan struct{}
 	stopped bool
+	started bool
 	visible bool
 }
 
@@ -186,10 +186,11 @@ func (v *ActiveVisualizer) Start() {
 		return
 	}
 	v.mu.Lock()
-	if v.stopped {
+	if v.stopped || v.started {
 		v.mu.Unlock()
 		return
 	}
+	v.started = true
 	if v.ringBuf == nil {
 		v.ringBuf = NewRingBuffer(FFTWindow * 4)
 	}
@@ -220,6 +221,9 @@ func (v *ActiveVisualizer) runLoop() {
 	analyzer := NewAudioAnalyzer()
 	state := NewSceneState(ViewportSize{Width: DefaultViewportWidth, Height: DefaultViewportHeight})
 	canvas := NewCanvas(DefaultViewportWidth, DefaultViewportHeight)
+	detail := NewCanvas(DefaultViewportWidth*2, DefaultViewportHeight*2)
+	var previousBuf *RingBuffer
+	wasVisible := false
 
 	ticker := time.NewTicker(time.Duration(AnalysisIntervalMs) * time.Millisecond)
 	defer ticker.Stop()
@@ -232,36 +236,51 @@ func (v *ActiveVisualizer) runLoop() {
 		}
 
 		v.mu.RLock()
-		active := v.enabled && v.visible && v.audioActive
-		v.mu.RUnlock()
-		if !active {
-			continue
-		}
-
-		v.mu.RLock()
+		visible := v.enabled && v.visible
+		playing := v.audioActive
 		currentBuf := v.ringBuf
 		v.mu.RUnlock()
+		now := time.Now()
+		dt := now.Sub(state.LastFrameTime).Seconds()
+		state.LastFrameTime = now
+		if !visible {
+			wasVisible = false
+			continue
+		}
+		if currentBuf != previousBuf {
+			analyzer = NewAudioAnalyzer()
+			state.tracker = NewBeatTracker()
+			state.lastBeat = -1
+			previousBuf = currentBuf
+		}
+		if !playing && state.AtRest() && wasVisible {
+			continue
+		}
+		wasVisible = true
+		analysis := AudioAnalysis{}
+		audioFresh := playing && currentBuf != nil && currentBuf.Fresh(now)
+		if audioFresh {
+			analysis = analyzer.Analyze(currentBuf)
+		}
+		state.Advance(analysis, dt, audioFresh)
 
-		analysis := analyzer.Analyze(currentBuf)
-		state.Update(analysis)
-
-		DrawBackground(canvas, state)
-		DrawMainSheep(canvas, state, analysis)
-
+		DrawBackground(detail, state)
+		DrawMainSheep(detail, state, analysis)
+		downsample2(detail, canvas)
 		frame := SixelEncode(canvas.Image())
 
 		// Re-check state after the relatively expensive render/encode step.
 		// Without this, pressing v/off can clear the area while this goroutine is
 		// still encoding a frame, then the stale frame is written after the clear.
 		v.mu.Lock()
-		activeNow := v.enabled && v.visible && v.audioActive
+		activeNow := v.enabled && v.visible && v.audioActive == playing
 		th := v.termHeight
 		row := v.renderRow
 		if activeNow {
 			v.sixelOutput = frame
 		}
-		v.mu.Unlock()
 
+		// Hold mu through output: turning off/clearing cannot race a stale frame.
 		// Sixel DCS 不能放进 Bubble Tea 的 View 输出（标准渲染器的行 diff
 		// 会注入 \x1b[K 清行序列，破坏 DCS）。
 		// 这里从后台 goroutine 直接写 os.Stdout，绕过 Bubble Tea 渲染管线。
@@ -282,5 +301,6 @@ func (v *ActiveVisualizer) runLoop() {
 				fmt.Fprintf(os.Stdout, "\x1b7\x1b[%d;1H%s\x1b8", row, frame)
 			}
 		}
+		v.mu.Unlock()
 	}
 }

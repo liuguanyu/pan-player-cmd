@@ -4,338 +4,231 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"sort"
+	"strconv"
 	"strings"
 )
 
-// SixelEncode converts an RGBA image to a Sixel escape sequence string.
-// The resulting string can be written directly to a Sixel-capable terminal.
-//
-// Sixel format reference:
-//
-//	ESC P q             — start
-//	#0;2;0;0;0          — define palette entry 0 as RGB (0,0,0)
-//	"1;1;W;H            — raster attributes (optional)
-//	<sixels per strip>
-//	ESC \               — end
+// SixelEncode uses a whole-image median-cut palette. Taking the first 256 colors
+// loses wool/eyes/accessories when the gradient and antialiased sky fill the
+// palette before the foreground is visited. Quantized indices are reused for
+// all planes instead of scanning every pixel for every palette entry.
 func SixelEncode(img *image.RGBA) string {
-	bounds := img.Bounds()
-	w := bounds.Dx()
-	h := bounds.Dy()
-	if w == 0 || h == 0 {
+	if img.Bounds().Empty() {
 		return ""
 	}
-
-	// Build palette from the image (up to 256 colors)
 	palette, _ := buildPalette(img)
-
-	// Floyd-Steinberg dither: smooth the sky gradient by diffusing
-	// quantization error to neighboring pixels.  Creates a new image
-	// where every pixel is one of the palette colors.
-	img = ditherFloydSteinberg(img, palette)
-
-	return sixelEncodeWithPalette(img, palette)
+	if len(palette) == 0 {
+		return ""
+	}
+	w, h := img.Bounds().Dx(), img.Bounds().Dy()
+	indices := make([]uint8, w*h)
+	cache := make(map[color.RGBA]uint8)
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			clr := img.RGBAAt(x+img.Rect.Min.X, y+img.Rect.Min.Y)
+			idx, ok := cache[clr]
+			if !ok {
+				best := int(^uint(0) >> 1)
+				for i, p := range palette {
+					r, g, b := int(clr.R)-int(p.R), int(clr.G)-int(p.G), int(clr.B)-int(p.B)
+					d := r*r + g*g + b*b
+					if d < best {
+						best = d
+						idx = uint8(i)
+					}
+					if d == 0 {
+						break
+					}
+				}
+				cache[clr] = idx
+			}
+			indices[y*w+x] = idx
+		}
+	}
+	return encodeIndices(w, h, palette, indices)
 }
-
-// SixelEncodeSolid returns a solid-color Sixel image used to erase previous
-// Sixel graphics. It intentionally avoids dithering and palette extraction.
 func SixelEncodeSolid(w, h int, clr color.RGBA) string {
 	if w <= 0 || h <= 0 {
 		return ""
 	}
-	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			img.SetRGBA(x, y, clr)
-		}
-	}
-	return sixelEncodeWithPalette(img, []color.RGBA{clr})
+	return encodeIndices(w, h, []color.RGBA{clr}, make([]uint8, w*h))
 }
-
-func sixelEncodeWithPalette(img *image.RGBA, palette []color.RGBA) string {
-	bounds := img.Bounds()
-	w := bounds.Dx()
-	h := bounds.Dy()
-
-	var sb strings.Builder
-
-	// Sixel start (explicit parameters for max compatibility)
-	sb.WriteString("\x1bP0;0;0q")
-	// Raster attributes: pixel aspect 1:1 and explicit image bounds.
-	// Without this, some terminals may use a non-square default aspect ratio.
-	sb.WriteByte('"')
-	sb.WriteString("1;1;")
-	sb.WriteString(itoa(w))
-	sb.WriteByte(';')
-	sb.WriteString(itoa(h))
-
-	// Define palette
+func encodeIndices(w, h int, palette []color.RGBA, indices []uint8) string {
+	var out strings.Builder
+	out.WriteString("\x1bP0;0;0q\"1;1;")
+	out.WriteString(strconv.Itoa(w))
+	out.WriteByte(';')
+	out.WriteString(strconv.Itoa(h))
 	for i, clr := range palette {
-		sb.WriteString(colorDefine(i, clr))
-	}
-
-	// Render in 6-pixel-high strips
-	strips := (h + 5) / 6
-	for strip := 0; strip < strips; strip++ {
-		y0 := strip * 6
-		y1 := y0 + 6
-		if y1 > h {
-			y1 = h
+		out.WriteByte('#')
+		out.WriteString(strconv.Itoa(i))
+		out.WriteString(";2;")
+		for j, v := range []uint8{clr.R, clr.G, clr.B} {
+			if j > 0 {
+				out.WriteByte(';')
+			}
+			out.WriteString(strconv.Itoa(int(math.Round(float64(v) * 100 / 255))))
 		}
-		stripH := y1 - y0
-
-		// For each color in the palette, output a color plane for this strip.
-		// Important: after each color plane, emit '$' to carriage-return to the
-		// start of the same strip. Without '$', color planes are appended
-		// horizontally, stretching the image into a long band.
-		wrotePlane := false
-		for colorIdx, clr := range palette {
-			// Skip if this color doesn't appear in this strip
-			if !colorInStrip(img, y0, y1, clr) {
+	}
+	// One strip's planes, filled in one pass over its pixels.
+	planes := make([]byte, len(palette)*w)
+	used := make([]bool, len(palette))
+	for y := 0; y < h; y += 6 {
+		clear(planes)
+		clear(used)
+		for dy := 0; dy < 6 && y+dy < h; dy++ {
+			for x := 0; x < w; x++ {
+				idx := int(indices[(y+dy)*w+x])
+				planes[idx*w+x] |= 1 << uint(dy)
+				used[idx] = true
+			}
+		}
+		for i := range palette {
+			if !used[i] {
 				continue
 			}
-
-			sb.WriteString(colorSelect(colorIdx))
-
-			// Encode sixels for this color in this strip.
-			// Each sixel character represents one column; we must emit
-			// enough characters to cover the full image width so the
-			// graphics cursor stays aligned.  Use standard Sixel RLE
-			// (!count char) to compress long runs.
-			x := 0
-			for x < w {
-				// Build the 6-bit sixel value for this column.
-				byteVal := byte(0)
-				for dy := 0; dy < stripH; dy++ {
-					px := img.RGBAAt(x, y0+dy)
-					if px.R == clr.R && px.G == clr.G && px.B == clr.B && px.A > 0 {
-						byteVal |= (1 << uint(dy))
-					}
-				}
-				char := byteToSixel(byteVal)
-
-				// Count how many times this exact value repeats.
+			out.WriteByte('#')
+			out.WriteString(strconv.Itoa(i))
+			plane := planes[i*w : (i+1)*w]
+			end := w
+			for end > 0 && plane[end-1] == 0 {
+				end--
+			}
+			for x := 0; x < end; {
+				v := plane[x]
 				run := 1
-				for x+run < w {
-					nextVal := byte(0)
-					for dy := 0; dy < stripH; dy++ {
-						px := img.RGBAAt(x+run, y0+dy)
-						if px.R == clr.R && px.G == clr.G && px.B == clr.B && px.A > 0 {
-							nextVal |= (1 << uint(dy))
-						}
-					}
-					if byteToSixel(nextVal) != char {
-						break
-					}
+				for x+run < end && plane[x+run] == v {
 					run++
 				}
-
-				if run > 1 {
-					sb.WriteString(fmtSixel("!%d", run))
+				if run >= 4 {
+					out.WriteByte('!')
+					out.WriteString(strconv.Itoa(run))
+					out.WriteByte('?' + v)
+				} else {
+					for j := 0; j < run; j++ {
+						out.WriteByte('?' + v)
+					}
 				}
-				sb.WriteByte(char)
 				x += run
 			}
-			sb.WriteByte('$')
-			wrotePlane = true
+			out.WriteByte('$')
 		}
-
-		// Move to next strip
-		if wrotePlane {
-			sb.WriteByte('-')
+		if y+6 < h {
+			out.WriteByte('-')
 		}
 	}
-
-	// Sixel end
-	sb.WriteString("\x1b\\")
-	return sb.String()
+	out.WriteString("\x1b\\")
+	return out.String()
 }
 
-// Color quantization: extract a palette from the image.
-// We use a simple hash-based approach that works for pixel art with few colors.
-func buildPalette(img *image.RGBA) ([]color.RGBA, map[color.RGBA]int) {
-	bounds := img.Bounds()
-	colorIndex := make(map[color.RGBA]int)
-	var palette []color.RGBA
+type paletteSample struct {
+	clr   color.RGBA
+	count int
+}
+type colorBox struct {
+	samples      []paletteSample
+	channel      int
+	span, weight int
+}
 
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			clr := img.RGBAAt(x, y)
-			if clr.A == 0 {
+func makeColorBox(samples []paletteSample) colorBox {
+	box := colorBox{samples: samples}
+	lo, hi := [3]int{255, 255, 255}, [3]int{}
+	for _, s := range samples {
+		box.weight += s.count
+		for i, v := range []uint8{s.clr.R, s.clr.G, s.clr.B} {
+			lo[i] = min(lo[i], int(v))
+			hi[i] = max(hi[i], int(v))
+		}
+	}
+	for i := 0; i < 3; i++ {
+		if hi[i]-lo[i] > box.span {
+			box.span = hi[i] - lo[i]
+			box.channel = i
+		}
+	}
+	return box
+}
+func component(c color.RGBA, i int) uint8 {
+	if i == 0 {
+		return c.R
+	}
+	if i == 1 {
+		return c.G
+	}
+	return c.B
+}
+func colorKey(c color.RGBA) uint32 { return uint32(c.R)<<16 | uint32(c.G)<<8 | uint32(c.B) }
+func buildPalette(img *image.RGBA) ([]color.RGBA, map[color.RGBA]int) {
+	histogram := make(map[color.RGBA]int)
+	for y := img.Rect.Min.Y; y < img.Rect.Max.Y; y++ {
+		for x := img.Rect.Min.X; x < img.Rect.Max.X; x++ {
+			c := img.RGBAAt(x, y)
+			if c.A > 0 {
+				c.A = 255
+				histogram[c]++
+			}
+		}
+	}
+	samples := make([]paletteSample, 0, len(histogram))
+	for c, n := range histogram {
+		samples = append(samples, paletteSample{c, n})
+	}
+	sort.Slice(samples, func(i, j int) bool { return colorKey(samples[i].clr) < colorKey(samples[j].clr) })
+	if len(samples) == 0 {
+		return nil, nil
+	}
+	boxes := []colorBox{makeColorBox(samples)}
+	for len(boxes) < 256 {
+		chosen, score := -1, -1.0
+		for i, b := range boxes {
+			if len(b.samples) < 2 {
 				continue
 			}
-			if _, ok := colorIndex[clr]; !ok {
-				if len(palette) >= 256 {
-					continue
-				}
-				colorIndex[clr] = len(palette)
-				palette = append(palette, clr)
+			v := float64(b.span) * math.Sqrt(float64(b.weight))
+			if v > score {
+				chosen = i
+				score = v
 			}
 		}
-	}
-
-	return palette, colorIndex
-}
-
-func colorDefine(index int, clr color.RGBA) string {
-	// Multiply by 100/255 ≈ 0.392 for the Sixel 0-100 RGB scale
-	r := int(math.Round(float64(clr.R) * 100.0 / 255.0))
-	g := int(math.Round(float64(clr.G) * 100.0 / 255.0))
-	b := int(math.Round(float64(clr.B) * 100.0 / 255.0))
-	if r > 100 {
-		r = 100
-	}
-	if g > 100 {
-		g = 100
-	}
-	if b > 100 {
-		b = 100
-	}
-	return fmtSixel("#%d;2;%d;%d;%d", index, r, g, b)
-}
-
-func colorSelect(index int) string {
-	return fmtSixel("#%d", index)
-}
-
-func fmtSixel(format string, args ...interface{}) string {
-	var sb strings.Builder
-	switch format {
-	case "#%d;2;%d;%d;%d":
-		i := args[0].(int)
-		r := args[1].(int)
-		g := args[2].(int)
-		b := args[3].(int)
-		sb.WriteByte('#')
-		sb.WriteString(itoa(i))
-		sb.WriteString(";2;")
-		sb.WriteString(itoa(r))
-		sb.WriteByte(';')
-		sb.WriteString(itoa(g))
-		sb.WriteByte(';')
-		sb.WriteString(itoa(b))
-	case "#%d":
-		sb.WriteByte('#')
-		sb.WriteString(itoa(args[0].(int)))
-	case "!%d":
-		sb.WriteByte('!')
-		sb.WriteString(itoa(args[0].(int)))
-	}
-	return sb.String()
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var digits [10]byte
-	i := len(digits)
-	for n > 0 {
-		i--
-		digits[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(digits[i:])
-}
-
-// byteToSixel converts a 6-bit value (0-63) to its sixel character.
-// Sixel characters: ? = 0, @ = 1, A = 2, ... ~ = 62, DEL = 63
-func byteToSixel(b byte) byte {
-	if b < 63 {
-		return '?' + b
-	}
-	return '~' // value 63 (all bits set)
-}
-
-func colorInStrip(img *image.RGBA, y0, y1 int, clr color.RGBA) bool {
-	bounds := img.Bounds()
-	for y := y0; y < y1 && y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			px := img.RGBAAt(x, y)
-			if px.R == clr.R && px.G == clr.G && px.B == clr.B && px.A > 0 {
-				return true
+		if chosen < 0 {
+			break
+		}
+		box := boxes[chosen]
+		sort.Slice(box.samples, func(i, j int) bool {
+			a, b := box.samples[i].clr, box.samples[j].clr
+			av, bv := component(a, box.channel), component(b, box.channel)
+			if av == bv {
+				return colorKey(a) < colorKey(b)
+			}
+			return av < bv
+		})
+		total, split := 0, 1
+		for i, s := range box.samples[:len(box.samples)-1] {
+			total += s.count
+			split = i + 1
+			if total >= box.weight/2 {
+				break
 			}
 		}
+		boxes[chosen] = makeColorBox(box.samples[:split])
+		boxes = append(boxes, makeColorBox(box.samples[split:]))
 	}
-	return false
-}
-
-// ditherFloydSteinberg creates a new RGBA image where every pixel is one of
-// the palette colors.  Quantization error is diffused to the right and down
-// using the classic Floyd-Steinberg kernel, smoothing gradients like the sky.
-//
-// Kernel:       X   7/16
-//
-//	3/16  5/16  1/16
-func ditherFloydSteinberg(img *image.RGBA, palette []color.RGBA) *image.RGBA {
-	if len(palette) == 0 {
-		return img
-	}
-
-	bounds := img.Bounds()
-	w, h := bounds.Dx(), bounds.Dy()
-	dithered := image.NewRGBA(bounds)
-
-	// Copy pixel data (float64 for error accumulation)
-	type fpx struct{ r, g, b float64 }
-	pixels := make([][]fpx, h)
-	for y := 0; y < h; y++ {
-		pixels[y] = make([]fpx, w)
-		for x := 0; x < w; x++ {
-			c := img.RGBAAt(x, y)
-			pixels[y][x] = fpx{float64(c.R), float64(c.G), float64(c.B)}
+	palette := make([]color.RGBA, 0, len(boxes))
+	index := make(map[color.RGBA]int)
+	for _, box := range boxes {
+		r, g, b := 0, 0, 0
+		for _, s := range box.samples {
+			r += int(s.clr.R) * s.count
+			g += int(s.clr.G) * s.count
+			b += int(s.clr.B) * s.count
+		}
+		c := color.RGBA{uint8(r / box.weight), uint8(g / box.weight), uint8(b / box.weight), 255}
+		if _, ok := index[c]; !ok {
+			index[c] = len(palette)
+			palette = append(palette, c)
 		}
 	}
-
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			old := pixels[y][x]
-			// Find closest palette color
-			best := palette[0]
-			bestDist := float64(1 << 50)
-			for _, p := range palette {
-				dr := old.r - float64(p.R)
-				dg := old.g - float64(p.G)
-				db := old.b - float64(p.B)
-				d := dr*dr + dg*dg + db*db
-				if d < bestDist {
-					bestDist = d
-					best = p
-				}
-				if d == 0 {
-					break
-				}
-			}
-
-			// Set the dithered pixel
-			dithered.SetRGBA(x, y, best)
-
-			// Compute and distribute error
-			errR := old.r - float64(best.R)
-			errG := old.g - float64(best.G)
-			errB := old.b - float64(best.B)
-
-			if x+1 < w {
-				pixels[y][x+1].r += errR * 7 / 16
-				pixels[y][x+1].g += errG * 7 / 16
-				pixels[y][x+1].b += errB * 7 / 16
-			}
-			if y+1 < h {
-				if x > 0 {
-					pixels[y+1][x-1].r += errR * 3 / 16
-					pixels[y+1][x-1].g += errG * 3 / 16
-					pixels[y+1][x-1].b += errB * 3 / 16
-				}
-				pixels[y+1][x].r += errR * 5 / 16
-				pixels[y+1][x].g += errG * 5 / 16
-				pixels[y+1][x].b += errB * 5 / 16
-				if x+1 < w {
-					pixels[y+1][x+1].r += errR * 1 / 16
-					pixels[y+1][x+1].g += errG * 1 / 16
-					pixels[y+1][x+1].b += errB * 1 / 16
-				}
-			}
-		}
-	}
-
-	return dithered
+	return palette, index
 }
