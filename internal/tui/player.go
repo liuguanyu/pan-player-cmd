@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -66,7 +67,7 @@ func (a *App) computeWindowTitle() string {
 	return sanitizeTitle(songName + " — " + line)
 }
 
-// updateWindowTitleCmd 仅在标题发生变化时返回 tea.SetWindowTitle 命令，
+// updateWindowTitleCmd 仅在标题发生变化时返回设置 tab 标题的命令，
 // 避免每个 100ms tick 都重复发送相同的标题设置指令。
 func (a *App) updateWindowTitleCmd() tea.Cmd {
 	title := a.computeWindowTitle()
@@ -74,13 +75,33 @@ func (a *App) updateWindowTitleCmd() tea.Cmd {
 		return nil
 	}
 	a.lastWindowTitle = title
-	return tea.SetWindowTitle(title)
+	return setTabTitleCmd(title)
 }
 
-// resetWindowTitle 重置终端标题（退出时清除标题，恢复为终端默认）
+// resetWindowTitle 重置 tab 标题（退出时清空 icon name，让终端恢复默认标题）
 func (a *App) resetWindowTitle() tea.Cmd {
 	a.lastWindowTitle = ""
-	return tea.SetWindowTitle("")
+	return setTabTitleCmd("")
+}
+
+// setTabTitleCmd 通过 OSC 1 设置终端 tab 标题（icon name）。
+//
+// 不能使用 tea.SetWindowTitle：它发送 OSC 2，在 iTerm2 中只改整个窗口标题，
+// 而 tab 标题来自 session 的 icon name。OSC 0 会同时改窗口和 tab；这里只改 tab。
+// 标题由 computeWindowTitle 经 sanitizeTitle 处理，已剔除控制字符和 BEL。
+func setTabTitleCmd(title string) tea.Cmd {
+	seq := tabTitleSequence(title)
+	return func() tea.Msg {
+		// 直接写 stdout：Bubble Tea 没有设置 icon name 的 API，
+		// 而 OSC 序列不能放进 View 输出（会被行 diff/清行序列破坏）。
+		fmt.Fprint(os.Stdout, seq)
+		return nil
+	}
+}
+
+// tabTitleSequence 构造设置 tab 标题的 OSC 1 序列；空标题表示恢复默认。
+func tabTitleSequence(title string) string {
+	return "\x1b]1;" + sanitizeTitle(title) + "\x07"
 }
 
 // cyclePlaybackSpeed 切换播放倍速
