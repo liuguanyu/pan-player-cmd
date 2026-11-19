@@ -13,13 +13,19 @@ import (
 type PlayerCore struct {
 	ctrl       *beep.Ctrl
 	volume     *effects.Volume
-	resampler  *beep.Resampler // 速度控制层，包装 volume
+	speeder    speedStreamer // 速度控制层（保持音高不变的时间拉伸），包装原始音频流
 	streamer   beep.StreamSeekCloser
 	format     beep.Format
 	isPlaying  bool
 	speed      float64 // 当前播放倍速
 	onTrackEnd func()
 	tapWrapper func(beep.Streamer) beep.Streamer // optional audio tap for visualization
+}
+
+// speedStreamer 是支持动态变速的流器接口，wsolaStreamer 和 beep.Resampler 都满足它。
+type speedStreamer interface {
+	beep.Streamer
+	SetSpeed(speed float64)
 }
 
 // SetOnTrackEnd 设置播放结束时的回调函数
@@ -97,14 +103,28 @@ func (pc *PlayerCore) SetSpeed(speed float64) bool {
 	}
 	pc.speed = speed
 
-	// 如果 resampler 已经存在，动态改变其比率
-	// 这样不会破坏 speaker.Play() 的注册流器
-	if pc.resampler != nil {
-		// Resampler ratio = old_sample_rate / new_sample_rate
-		// ratio=2 -> 播放速度翻倍，ratio=0.5 -> 播放速度减半
-		pc.resampler.SetRatio(speed)
+	if pc.volume == nil {
+		return true // 还没有音频流，SetStream 会按 pc.speed 构建链路
 	}
 
+	speaker.Lock()
+	defer speaker.Unlock()
+	if speed == 1.0 {
+		// 1x 时旁路速度层，音量直连原始流（零额外延迟/CPU）
+		pc.volume.Streamer = beep.Streamer(pc.streamer)
+		pc.speeder = nil
+		return true
+	}
+	if pc.speeder == nil {
+		total := 0
+		if pc.streamer != nil {
+			total = pc.streamer.Len()
+		}
+		pc.speeder = newCascadeSpeedStreamer(beep.Streamer(pc.streamer), total, speed)
+	} else {
+		pc.speeder.SetSpeed(speed)
+	}
+	pc.volume.Streamer = beep.Streamer(pc.speeder)
 	return true
 }
 
@@ -135,21 +155,28 @@ func (pc *PlayerCore) SetStream(streamer beep.StreamSeekCloser, format beep.Form
 	pc.streamer = streamer
 	pc.format = format
 
+	// 构建速度控制层（WSOLA 时间拉伸：变速不变调）。
+	// 1x 时旁路速度层，减少额外延迟与 CPU 开销。
+	var streamerForVolume beep.Streamer = streamer
+	if pc.speed != 1.0 {
+		pc.speeder = newCascadeSpeedStreamer(beep.Streamer(streamer), streamer.Len(), pc.speed)
+		streamerForVolume = beep.Streamer(pc.speeder)
+	} else {
+		pc.speeder = nil
+	}
+
 	pc.volume = &effects.Volume{
-		Streamer: streamer,
+		Streamer: streamerForVolume,
 		Base:     2,
 		Volume:   0,
 		Silent:   false,
 	}
 
-	// 创建速度控制层 (使用Resampler实现速度调整)
-	// 质量设为4: 良好的性能和质量平衡
-	pc.resampler = beep.ResampleRatio(4, float64(pc.speed), pc.volume)
-
-	// 确定送入 ctrl 的流：如果有 tapWrapper 则包裹一层
-	streamerForCtrl := beep.Streamer(pc.resampler)
+	// 确定送入 ctrl 的流：如果有 tapWrapper 则包裹一层（tap 位于音量之后，
+	// 可视化看到的是最终要播放的声音）
+	streamerForCtrl := beep.Streamer(pc.volume)
 	if pc.tapWrapper != nil {
-		streamerForCtrl = pc.tapWrapper(pc.resampler)
+		streamerForCtrl = pc.tapWrapper(streamerForCtrl)
 	}
 
 	pc.ctrl = &beep.Ctrl{
